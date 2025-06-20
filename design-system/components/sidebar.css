@@ -1,0 +1,11 @@
+/* Sidebar.css - minimal starter styles, expand as needed */
+
+.sidebar-section {
+  overflow: hidden;
+  max-height: 0;
+  transition: max-height 0.3s cubic-bezier(0.4,0,0.2,1);
+}
+.sidebar-section[data-expanded="true"] {
+  max-height: var(--expanded-height, 1000px);
+  transition: max-height 0.3s cubic-bezier(0.4,0,0.2,1);
+}

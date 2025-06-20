@@ -1,0 +1,27 @@
+
+{
+  "name": "Advanced Crypto Airdrop Compass",
+  "short_name": "AirdropCompass",
+  "description": "A comprehensive application to track, manage, and strategize for crypto airdrops, manage wallets, schedule recurring tasks, and access learning resources. Note: Ensure icon files exist at /assets/icons/icon-192x192.png and /assets/icons/icon-512x512.png for the manifest to work correctly.",
+  "icons": [
+    {
+      "src": "/assets/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/assets/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#1f2937",
+  "theme_color": "#4f46e5",
+  "scope": "/",
+  "orientation": "portrait-primary",
+  "requestFramePermissions": []
+}

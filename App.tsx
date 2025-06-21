@@ -288,20 +288,13 @@ const AppContent: React.FC = () => {
             <RouterRoute path="/reports" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><ReportsPage /></ErrorBoundary></ProtectedRoute>} />
 
             <RouterRoute path="/learning" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><LearningPage /></ErrorBoundary></ProtectedRoute>} />
-            <RouterRoute path="/learning/guides" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><LearningPage /></ErrorBoundary></ProtectedRoute>} />
-            <RouterRoute path="/learning/guides/:itemId" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><LearningPage /></ErrorBoundary></ProtectedRoute>} />
-            <RouterRoute path="/learning/glossary" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><LearningPage /></ErrorBoundary></ProtectedRoute>} />
-            <RouterRoute path="/learning/glossary/:itemId" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><LearningPage /></ErrorBoundary></ProtectedRoute>} />
             <RouterRoute path="/learning/sybilPrevention" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><SybilPreventionGuidePage /></ErrorBoundary></ProtectedRoute>} />
-            <RouterRoute path="/learning/notebook" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><LearningPage /></ErrorBoundary></ProtectedRoute>} />
-            <RouterRoute path="/learning/notebook/:itemId" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><LearningPage /></ErrorBoundary></ProtectedRoute>} />
             <RouterRoute path="/learning/aiStrategy" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><AIStrategyPage /></ErrorBoundary></ProtectedRoute>} />
             <RouterRoute path="/learning/aiAnalyst" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><AIAnalystPage /></ErrorBoundary></ProtectedRoute>} />
-            <RouterRoute path="/learning/newsAnalysis" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><LearningPage /></ErrorBoundary></ProtectedRoute>} />
             <RouterRoute path="/learning/:subPage" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><LearningPage /></ErrorBoundary></ProtectedRoute>} />
             <RouterRoute path="/learning/:subPage/:itemId" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><LearningPage /></ErrorBoundary></ProtectedRoute>} />
-
             <RouterRoute path="/analytics" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><AnalyticsHubPage /></ErrorBoundary></ProtectedRoute>} />
+
             <RouterRoute path="/tools/aggregator" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><AggregatorPage /></ErrorBoundary></ProtectedRoute>} />
 
             <RouterRoute path="/wallets" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><WalletManagerPage /></ErrorBoundary></ProtectedRoute>} />

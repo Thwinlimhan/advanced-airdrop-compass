@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Card } from '../../design-system/components/Card';
-import { Button } from '../../components/ui/Button';
-import { Modal } from '../../components/ui/Modal';
+import { Card, CardHeader } from '../../design-system/components/Card';
+import { Button } from '../../design-system/components/Button';
+import { Modal } from '../../design-system/components/Modal';
 import { Zap, RefreshCcw, Brain, Loader2, Info } from 'lucide-react';
 import { GasPrice } from '../../types';
 import { MOCK_GAS_PRICES, NETWORK_COLORS } from '../../constants'; 
@@ -9,7 +9,7 @@ import { useAppContext } from '../../contexts/AppContext';
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 import { useToast } from '../../hooks/useToast';
 import { AlertMessage } from '../../components/ui/AlertMessage';
-import { LineChart } from '../../components/charts/LineChart';
+import { EnhancedLineChart as LineChart } from '../../components/charts/LineChart';
 import { ChartData } from 'chart.js';
 
 const generateHistoricalGasDataForNetwork = (networkName: string, accentColor: string): ChartData<'line'> => {
@@ -135,7 +135,7 @@ export const GasTrackerWidget: React.FC = () => {
     }
     setIsAiTipsModalOpen(true);
     if (aiGasTips && !aiGasTips.includes("API_KEY is not configured")) return; 
-    setIsLoading(true);
+    setLoading(true);
     setAiGasTips(null);
     setIsAiLoading(true);
 
@@ -143,12 +143,12 @@ export const GasTrackerWidget: React.FC = () => {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
         const prompt = "Provide general tips for optimizing gas fees on Ethereum and common L2 solutions like Arbitrum or Polygon. Mention factors like network congestion, transaction timing, setting appropriate gas limits/priority fees, and using L2s. Keep tips concise and actionable for a crypto user.";
         const response = await ai.models.generateContent({ model: 'gemini-2.5-flash-preview-04-17', contents: prompt });
-        setAiGasTips(response.text);
+        setAiGasTips(response.text || "No tips available");
     } catch (error) {
         setAiGasTips("Error fetching AI gas tips. Please try again later.");
         addToast(`AI Gas Tips Error: ${(error as Error).message}`, 'error');
     } finally {
-        setIsAiLoading(false);
+        setLoading(false);
       setIsAiTipsModalOpen(true); 
       setIsAiLoading(false);
     }
@@ -173,70 +173,72 @@ export const GasTrackerWidget: React.FC = () => {
 
 
   return (
-    <Card title="Multi-Chain Gas Fees" actions={
-        <div className="flex items-center space-x-2">
-            <Button onClick={handleGetAiGasTips} size="sm" variant="ghost" title="Get AI Gas Optimization Tips" leftIcon={<Brain size={16} className="text-muted-dark"/>} disabled={!process.env.API_KEY}/>
-            <Button onClick={localFetchGasPrices} disabled={loading} className="p-1 text-muted-dark hover:text-white" title="Refresh Gas Prices"><RefreshCcw size={18} className={loading ? 'animate-spin' : ''} /></Button>
-        </div>
-    }>
-      {loading && filteredGasPrices.length === 0 ? ( <p className="text-muted-dark">Loading gas prices...</p> ) : 
-      filteredGasPrices.length === 0 ? ( <p className="text-muted-dark">No gas networks selected or data available. Check settings.</p> ) : (
-        <div className="space-y-2.5">
-          {filteredGasPrices.map((gas) => (
-            <div key={gas.network} className="flex justify-between items-center p-2.5 bg-background-dark/50 dark:bg-card-dark/60 rounded-lg">
-                <div className="flex items-center">
-                    <span className={`w-6 h-6 rounded-full flex items-center justify-center mr-2.5 ${getNetworkIconColor(gas.network)}`}>
-                        <Zap size={14} className="text-white" />
-                    </span>
-                    <span className="font-medium text-white">{gas.network}</span>
-                </div>
-                <div className="text-right">
-                    <span className={`text-sm font-semibold text-white`}>{gas.price}</span>
-                    <p className="text-xs text-muted-dark">
-                      Updated: {gas.lastUpdated} <span className={`capitalize ${getPriceTextColor(gas.source)}`}>({gas.source})</span>
-                    </p>
-                </div>
+    <>
+      <Card>
+        <CardHeader 
+          title="Multi-Chain Gas Fees" 
+          action={
+            <div className="flex items-center space-x-2">
+                <Button onClick={handleGetAiGasTips} size="sm" variant="ghost" title="Get AI Gas Optimization Tips" leftIcon={<Brain size={16} className="text-muted-dark"/>} disabled={!process.env.API_KEY}/>
+                <Button onClick={localFetchGasPrices} disabled={loading} className="p-1 text-muted-dark hover:text-white" title="Refresh Gas Prices"><RefreshCcw size={18} className={loading ? 'animate-spin' : ''} /></Button>
             </div>
-          ))}
-        </div>
-      )}
-      {isApiKeyMissing && (
-          <AlertMessage type="info" title="API Key Recommendation" message="For live Ethereum gas price updates (via Etherscan) or AI features (via Gemini), ensure relevant API_KEY(s) are set in environment variables." className="mt-3 text-xs bg-card-dark/50 border-muted-dark/30 text-muted-dark" />
-      )}
-      {primaryNetworkForChart && historicalGasChartData && filteredGasPrices.some(gp => gp.network === primaryNetworkForChart) && ( 
-         <div className="mt-4 h-40">
-            <LineChart 
-                data={historicalGasChartData} 
-                settings={appData.settings}
-                options={{
-                     maintainAspectRatio: false,
-                     plugins: { legend: { display: false } },
-                     scales: { 
-                        x: { grid: { color: 'rgba(167, 167, 167, 0.1)'}, ticks: { color: '#A7A7A7' } },
-                        y: { grid: { color: 'rgba(167, 167, 167, 0.1)'}, ticks: { color: '#A7A7A7' }, title: { display: true, text: `Gas (${primaryNetworkForChart.toLowerCase().includes('solana') ? 'SOL' : 'Gwei'})`, color: '#A7A7A7'} }
-                    }
-                }}
-                titleText={undefined}
-            />
-        </div>
-      )}
-    </Card>
+          }
+        />
+        {loading && filteredGasPrices.length === 0 ? ( <p className="text-muted-dark">Loading gas prices...</p> ) : 
+        filteredGasPrices.length === 0 ? ( <p className="text-muted-dark">No gas networks selected or data available. Check settings.</p> ) : (
+          <div className="space-y-2.5">
+            {filteredGasPrices.map((gas) => (
+              <div key={gas.network} className="flex justify-between items-center p-2.5 bg-background-dark/50 dark:bg-card-dark/60 rounded-lg">
+                  <div className="flex items-center">
+                      <span className={`w-6 h-6 rounded-full flex items-center justify-center mr-2.5 ${getNetworkIconColor(gas.network)}`}>
+                          <Zap size={14} className="text-white" />
+                      </span>
+                      <span className="font-medium text-white">{gas.network}</span>
+                  </div>
+                  <div className="text-right">
+                      <span className={`text-sm font-semibold text-white`}>{gas.price}</span>
+                      <p className="text-xs text-muted-dark">
+                        Updated: {gas.lastUpdated} <span className={`capitalize ${getPriceTextColor(gas.source)}`}>({gas.source})</span>
+                      </p>
+                  </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {isApiKeyMissing && (
+            <AlertMessage type="info" title="API Key Recommendation" message="For live Ethereum gas price updates (via Etherscan) or AI features (via Gemini), ensure relevant API_KEY(s) are set in environment variables." className="mt-3 text-xs bg-card-dark/50 border-muted-dark/30 text-muted-dark" />
+        )}
+        {primaryNetworkForChart && historicalGasChartData && filteredGasPrices.some(gp => gp.network === primaryNetworkForChart) && ( 
+           <div className="mt-4 h-40">
+              <LineChart 
+                  data={historicalGasChartData} 
+                  options={{
+                       maintainAspectRatio: false,
+                       plugins: { legend: { display: false } },
+                       scales: { 
+                          x: { grid: { color: 'rgba(167, 167, 167, 0.1)'}, ticks: { color: '#A7A7A7' } },
+                          y: { grid: { color: 'rgba(167, 167, 167, 0.1)'}, ticks: { color: '#A7A7A7' }, title: { display: true, text: `Gas (${primaryNetworkForChart.toLowerCase().includes('solana') ? 'SOL' : 'Gwei'})`, color: '#A7A7A7'} }
+                      }
+                  }}
+              />
+          </div>
+        )}
+      </Card>
 
-    <Modal isOpen={isAiTipsModalOpen} onClose={() => setIsAiTipsModalOpen(false)} title={
-        <div className="flex items-center"><Brain size={20} className="mr-2 text-primary" /> AI Gas Optimization Tips</div>
-    } size="lg">
-        {isApiKeyMissing && aiGasTips && aiGasTips.includes("API_KEY is not configured") && ( 
-             <AlertMessage type="warning" title="API Key Missing" message="AI Gas Tips are unavailable because the API_KEY for Gemini is not configured in the application environment." />
-        )}
-        {isAiLoading && <div className="flex items-center justify-center py-6"><Loader2 size={28} className="animate-spin text-primary" /><p className="ml-3 text-muted-dark">Loading AI Tips...</p></div>}
-        {aiGasTips && !isAiLoading && (
-            <div className="prose dark:prose-invert max-w-none p-1 text-sm text-white dark:text-muted-dark whitespace-pre-wrap max-h-[60vh] overflow-y-auto">
-                {aiGasTips}
-            </div>
-        )}
-        <div className="mt-6 flex justify-end">
-            <Button variant="outline" onClick={() => setIsAiTipsModalOpen(false)}>Close</Button>
-        </div>
-    </Modal>
+      <Modal isOpen={isAiTipsModalOpen} onClose={() => setIsAiTipsModalOpen(false)} title="AI Gas Optimization Tips">
+          {isApiKeyMissing && aiGasTips && aiGasTips.includes("API_KEY is not configured") && ( 
+               <AlertMessage type="warning" title="API Key Missing" message="AI Gas Tips are unavailable because the API_KEY for Gemini is not configured in the application environment." />
+          )}
+          {isAiLoading && <div className="flex items-center justify-center py-6"><Loader2 size={28} className="animate-spin text-primary" /><p className="ml-3 text-muted-dark">Loading AI Tips...</p></div>}
+          {aiGasTips && !isAiLoading && (
+              <div className="prose dark:prose-invert max-w-none p-1 text-sm text-white dark:text-muted-dark whitespace-pre-wrap max-h-[60vh] overflow-y-auto">
+                  {aiGasTips}
+              </div>
+          )}
+          <div className="mt-6 flex justify-end">
+              <Button variant="outline" onClick={() => setIsAiTipsModalOpen(false)}>Close</Button>
+          </div>
+      </Modal>
+    </>
   );
 };

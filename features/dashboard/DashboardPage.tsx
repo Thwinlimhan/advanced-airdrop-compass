@@ -48,7 +48,7 @@ const DraggableWidgetWrapper: React.FC<DraggableWidgetProps> = ({ widgetKey, chi
 };
 
 export const DashboardPage: React.FC = () => {
-  const { appData, markTutorialAsCompleted, completeRecurringTask, updateDashboardWidgetOrder } = useAppContext();
+  const { appData, markTutorialAsCompleted, completeRecurringTask, updateSettings } = useAppContext();
   const [isTourOpen, setIsTourOpen] = useState(false);
   const [draggedWidgetKey, setDraggedWidgetKey] = useState<WidgetKey | null>(null);
 
@@ -114,15 +114,15 @@ export const DashboardPage: React.FC = () => {
 
   // Gather recurring tasks
   appData.recurringTasks.forEach(task => {
-    if (task.isActive && task.dueDate) {
-      const dueDate = new Date(task.dueDate);
+    if (task.isActive && task.nextDueDate) {
+      const dueDate = new Date(task.nextDueDate);
       const now = new Date();
       const isOverdue = dueDate < now;
       
       upcomingPriorityTasks.push({
         id: task.id,
         name: task.name,
-        dueDate: task.dueDate,
+        dueDate: task.nextDueDate,
         type: 'recurring' as const,
         isOverdue,
       });
@@ -135,7 +135,7 @@ export const DashboardPage: React.FC = () => {
     if (!a.isOverdue && b.isOverdue) return 1;
     
     if (a.airdropPriority && b.airdropPriority) {
-      const priorityOrder = { HIGH: 3, MEDIUM: 2, LOW: 1 };
+      const priorityOrder = { [AirdropPriority.HIGH]: 3, [AirdropPriority.MEDIUM]: 2, [AirdropPriority.LOW]: 1 };
       const aPriority = priorityOrder[a.airdropPriority] || 0;
       const bPriority = priorityOrder[b.airdropPriority] || 0;
       if (aPriority !== bPriority) return bPriority - aPriority;
@@ -176,17 +176,17 @@ export const DashboardPage: React.FC = () => {
       if (draggedIndex !== -1 && targetIndex !== -1) {
         newOrder.splice(draggedIndex, 1);
         newOrder.splice(targetIndex, 0, draggedKey);
-        updateDashboardWidgetOrder(newOrder);
+        updateSettings({ dashboardWidgetOrder: newOrder });
       }
     }
     
     setDraggedWidgetKey(null);
   };
 
-  const widgetOrder = appData.settings.dashboardWidgetOrder || ['summary', 'userStats', 'aiDiscovery', 'priorityTasks', 'gasTracker', 'alerts'];
+  const widgetOrder = appData.settings.dashboardWidgetOrder || ['summary', 'userStats', 'aiDiscovery', 'priorityTasks', 'gas', 'alerts'];
   const orderedVisibleWidgetKeys = widgetOrder.filter(key => {
-    const widgetConfig = appData.settings.dashboardWidgets?.[key as WidgetKey];
-    return widgetConfig?.isVisible !== false;
+    const widgetConfig = appData.settings.dashboardWidgetVisibility?.[key as WidgetKey];
+    return widgetConfig !== false;
   });
 
   const widgets = {
@@ -199,7 +199,7 @@ export const DashboardPage: React.FC = () => {
     userStats: <UserStatsWidget points={appData.settings.userPoints || 0} />,
     aiDiscovery: <AirdropDiscoveryWidget />,
     priorityTasks: <PriorityTasksWidget tasks={upcomingPriorityTasks} />,
-    gasTracker: <GasTrackerWidget />,
+    gas: <GasTrackerWidget />,
     alerts: <AlertsWidget />
   };
 

@@ -17,6 +17,7 @@ import { useTranslation } from '../../hooks/useTranslation';
 import { useToast } from '../../hooks/useToast';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { getDeferredInstallPrompt, clearDeferredInstallPrompt } from '../../App';
+import { aiService, updateAIService, isProviderAvailable, type AIServiceConfig } from '../../utils/aiService';
 
 const TemplateTaskItem: React.FC<{ task: Omit<AirdropTask, 'id' | 'completed' | 'subTasks' | 'timeSpentMinutes' | 'notes' | 'cost' | 'linkedGasLogId' | 'completionDate' | 'dependsOnTaskIds'> & {tempId?: string}, onRemove: () => void }> = ({ task, onRemove }) => (
     <div className="flex items-center justify-between p-2 bg-background-dark/50 dark:bg-card-dark/60 rounded-lg text-sm">
@@ -114,6 +115,10 @@ export const SettingsPage: React.FC = () => {
   const [widgetOrderState, setWidgetOrderState] = useState<WidgetKey[]>(appData.settings.dashboardWidgetOrder || DEFAULT_SETTINGS.dashboardWidgetOrder!);
   const [mockApiKey, setMockApiKey] = useState<string | null>(null);
   const [webhookUrl, setWebhookUrl] = useState('');
+  const [aiProvider, setAiProvider] = useState<'gemini' | 'ollama' | 'deepseek'>('ollama');
+  const [aiApiKey, setAiApiKey] = useState('');
+  const [aiBaseUrl, setAiBaseUrl] = useState('http://localhost:11434');
+  const [aiModel, setAiModel] = useState('llama3.2');
 
 
   const accentColorOptions = [
@@ -486,6 +491,42 @@ export const SettingsPage: React.FC = () => {
     setWebhookUrl('');
   }
 
+  const handleAiProviderChange = (provider: 'gemini' | 'ollama' | 'deepseek') => {
+    setAiProvider(provider);
+    // Reset fields based on provider
+    if (provider === 'ollama') {
+      setAiApiKey('');
+      setAiBaseUrl('http://localhost:11434');
+      setAiModel('llama3.2');
+    } else if (provider === 'deepseek') {
+      setAiApiKey('');
+      setAiBaseUrl('https://api.deepseek.com');
+      setAiModel('deepseek-chat');
+    } else if (provider === 'gemini') {
+      setAiApiKey('');
+      setAiBaseUrl('');
+      setAiModel('gemini-2.5-flash-preview-04-17');
+    }
+  };
+
+  const handleSaveAiConfig = () => {
+    const config: Partial<AIServiceConfig> = {
+      provider: aiProvider,
+      model: aiModel
+    };
+
+    if (aiProvider === 'ollama') {
+      config.baseUrl = aiBaseUrl;
+    } else {
+      config.apiKey = aiApiKey;
+      if (aiProvider === 'deepseek') {
+        config.baseUrl = aiBaseUrl;
+      }
+    }
+
+    updateAIService(config);
+    addToast(`AI Provider updated to ${aiProvider}`, "success");
+  };
 
   return (
     <PageWrapper>
@@ -781,6 +822,117 @@ export const SettingsPage: React.FC = () => {
               </div>
           </div>
         </Card>
+
+        <Card className="md:col-span-1">
+          <CardHeader><h3 className="text-lg font-semibold">AI Provider Settings</h3></CardHeader>
+          <p className="text-sm text-[var(--color-text-secondary)] mb-3">Configure which AI provider to use for AI features throughout the app.</p>
+          <div className="space-y-3">
+              <div>
+                  <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1">AI Provider:</label>
+                  <div className="flex flex-wrap gap-2">
+                      {[
+                          { value: 'ollama', label: 'Ollama (Local)', available: true },
+                          { value: 'deepseek', label: 'DeepSeek', available: isProviderAvailable('deepseek') },
+                          { value: 'gemini', label: 'Gemini', available: isProviderAvailable('gemini') }
+                      ].map(provider => (
+                          <button
+                              key={provider.value}
+                              onClick={() => handleAiProviderChange(provider.value as any)}
+                              className={`px-3 py-1.5 rounded-md text-xs border transition-all ${
+                                  aiProvider === provider.value 
+                                      ? 'bg-primary text-white border-primary' 
+                                      : 'bg-card-dark/60 border-gray-700/50 text-[var(--color-text-secondary)] hover:bg-card-dark/80'
+                              } ${!provider.available ? 'opacity-50 cursor-not-allowed' : ''}`}
+                              disabled={!provider.available}
+                          >
+                              {provider.label}
+                              {!provider.available && ' (No API Key)'}
+                          </button>
+                      ))}
+                  </div>
+              </div>
+
+              {aiProvider === 'ollama' && (
+                  <>
+                      <div>
+                          <label htmlFor="ollama-base-url" className="block text-xs font-medium text-[var(--color-text-secondary)] mb-0.5">Ollama Base URL:</label>
+                          <Input 
+                              id="ollama-base-url" 
+                              value={aiBaseUrl} 
+                              onChange={e => setAiBaseUrl(e.target.value)} 
+                              placeholder="http://localhost:11434"
+                              wrapperClassName="mb-0" 
+                          />
+                      </div>
+                      <div>
+                          <label htmlFor="ollama-model" className="block text-xs font-medium text-[var(--color-text-secondary)] mb-0.5">Model:</label>
+                          <Select 
+                              id="ollama-model" 
+                              value={aiModel} 
+                              onChange={e => setAiModel(e.target.value)} 
+                              options={[
+                                  { value: 'llama3.2', label: 'Llama 3.2' },
+                                  { value: 'llama3.1', label: 'Llama 3.1' },
+                                  { value: 'mistral', label: 'Mistral' },
+                                  { value: 'codellama', label: 'Code Llama' },
+                                  { value: 'custom', label: 'Custom Model' }
+                              ]}
+                              wrapperClassName="mb-0"
+                          />
+                      </div>
+                  </>
+              )}
+
+              {(aiProvider === 'deepseek' || aiProvider === 'gemini') && (
+                  <>
+                      <div>
+                          <label htmlFor="ai-api-key" className="block text-xs font-medium text-[var(--color-text-secondary)] mb-0.5">API Key:</label>
+                          <Input 
+                              id="ai-api-key" 
+                              type="password"
+                              value={aiApiKey} 
+                              onChange={e => setAiApiKey(e.target.value)} 
+                              placeholder={`Enter your ${aiProvider} API key`}
+                              wrapperClassName="mb-0" 
+                          />
+                      </div>
+                      {aiProvider === 'deepseek' && (
+                          <div>
+                              <label htmlFor="deepseek-base-url" className="block text-xs font-medium text-[var(--color-text-secondary)] mb-0.5">Base URL:</label>
+                              <Input 
+                                  id="deepseek-base-url" 
+                                  value={aiBaseUrl} 
+                                  onChange={e => setAiBaseUrl(e.target.value)} 
+                                  placeholder="https://api.deepseek.com"
+                                  wrapperClassName="mb-0" 
+                              />
+                          </div>
+                      )}
+                      <div>
+                          <label htmlFor="ai-model" className="block text-xs font-medium text-[var(--color-text-secondary)] mb-0.5">Model:</label>
+                          <Input 
+                              id="ai-model" 
+                              value={aiModel} 
+                              onChange={e => setAiModel(e.target.value)} 
+                              placeholder={aiProvider === 'deepseek' ? 'deepseek-chat' : 'gemini-2.5-flash-preview-04-17'}
+                              wrapperClassName="mb-0" 
+                          />
+                      </div>
+                  </>
+              )}
+
+              <div className="pt-2 border-t dark:border-gray-700/50">
+                  <p className="text-xs text-[var(--color-text-secondary)] mb-2">
+                      Current Provider: <span className="font-medium">{aiService.getProviderName()}</span>
+                      {aiService.isAvailable() ? ' ✅ Available' : ' ❌ Not Available'}
+                  </p>
+                  <Button onClick={handleSaveAiConfig} size="sm" variant="outline" leftIcon={<Brain size={16}/>}>
+                      Save AI Configuration
+                  </Button>
+              </div>
+          </div>
+        </Card>
+
         <Card className="md:col-span-1">
           <CardHeader><h3 className="text-lg font-semibold">Cloud Sync & Backup (Conceptual)</h3></CardHeader>
           <p className="text-sm text-[var(--color-text-secondary)] mb-3">Securely sync or backup your data to a cloud service. This is a UI placeholder; no actual connections are made.</p>

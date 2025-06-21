@@ -6,11 +6,11 @@ import { Zap, RefreshCcw, Brain, Loader2, Info } from 'lucide-react';
 import { GasPrice } from '../../types';
 import { MOCK_GAS_PRICES, NETWORK_COLORS } from '../../constants'; 
 import { useAppContext } from '../../contexts/AppContext';
-import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 import { useToast } from '../../hooks/useToast';
 import { AlertMessage } from '../../components/ui/AlertMessage';
 import { EnhancedLineChart as LineChart } from '../../components/charts/LineChart';
 import { ChartData } from 'chart.js';
+import { aiService, isProviderAvailable } from '../../utils/aiService';
 
 const generateHistoricalGasDataForNetwork = (networkName: string, accentColor: string): ChartData<'line'> => {
   const labels: string[] = [];
@@ -119,7 +119,7 @@ export const GasTrackerWidget: React.FC = () => {
   };
 
   useEffect(() => {
-    if (!process.env.API_KEY && !process.env.ETHERSCAN_API_KEY) { 
+    if (!aiService.isAvailable()) { 
       setIsApiKeyMissing(true); 
     }
   }, []);
@@ -127,23 +127,22 @@ export const GasTrackerWidget: React.FC = () => {
   useEffect(() => { localFetchGasPrices(); }, []); 
 
   const handleGetAiGasTips = async () => {
-    if (!process.env.API_KEY) {
-      addToast("AI Gas Tips unavailable: Gemini API Key not configured.", "warning");
+    if (!aiService.isAvailable()) {
+      addToast(`AI Gas Tips unavailable: ${aiService.getProviderName()} is not configured.`, "warning");
       setIsAiTipsModalOpen(true); 
-      setAiGasTips("AI Gas Tips are unavailable because the API_KEY for Gemini is not configured in the application environment.");
+      setAiGasTips(`AI Gas Tips are unavailable because ${aiService.getProviderName()} is not configured in the application environment.`);
       return;
     }
     setIsAiTipsModalOpen(true);
-    if (aiGasTips && !aiGasTips.includes("API_KEY is not configured")) return; 
+    if (aiGasTips && !aiGasTips.includes("is not configured")) return; 
     setLoading(true);
     setAiGasTips(null);
     setIsAiLoading(true);
 
     try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
         const prompt = "Provide general tips for optimizing gas fees on Ethereum and common L2 solutions like Arbitrum or Polygon. Mention factors like network congestion, transaction timing, setting appropriate gas limits/priority fees, and using L2s. Keep tips concise and actionable for a crypto user.";
-        const response = await ai.models.generateContent({ model: 'gemini-2.5-flash-preview-04-17', contents: prompt });
-        setAiGasTips(response.text || "No tips available");
+        const response = await aiService.generateContent(prompt);
+        setAiGasTips(response || "No tips available");
     } catch (error) {
         setAiGasTips("Error fetching AI gas tips. Please try again later.");
         addToast(`AI Gas Tips Error: ${(error as Error).message}`, 'error');
@@ -179,7 +178,7 @@ export const GasTrackerWidget: React.FC = () => {
           title="Multi-Chain Gas Fees" 
           action={
             <div className="flex items-center space-x-2">
-                <Button onClick={handleGetAiGasTips} size="sm" variant="ghost" title="Get AI Gas Optimization Tips" leftIcon={<Brain size={16} className="text-muted-dark"/>} disabled={!process.env.API_KEY}/>
+                <Button onClick={handleGetAiGasTips} size="sm" variant="ghost" title="Get AI Gas Optimization Tips" leftIcon={<Brain size={16} className="text-muted-dark"/>} disabled={!aiService.isAvailable()}/>
                 <Button onClick={localFetchGasPrices} disabled={loading} className="p-1 text-muted-dark hover:text-white" title="Refresh Gas Prices"><RefreshCcw size={18} className={loading ? 'animate-spin' : ''} /></Button>
             </div>
           }
@@ -206,7 +205,7 @@ export const GasTrackerWidget: React.FC = () => {
           </div>
         )}
         {isApiKeyMissing && (
-            <AlertMessage type="info" title="API Key Recommendation" message="For live Ethereum gas price updates (via Etherscan) or AI features (via Gemini), ensure relevant API_KEY(s) are set in environment variables." className="mt-3 text-xs bg-card-dark/50 border-muted-dark/30 text-muted-dark" />
+            <AlertMessage type="info" title="AI Provider Recommendation" message={`For live Ethereum gas price updates (via Etherscan) or AI features (via ${aiService.getProviderName()}), ensure relevant API_KEY(s) are set in environment variables.`} className="mt-3 text-xs bg-card-dark/50 border-muted-dark/30 text-muted-dark" />
         )}
         {primaryNetworkForChart && historicalGasChartData && filteredGasPrices.some(gp => gp.network === primaryNetworkForChart) && ( 
            <div className="mt-4 h-40">
@@ -226,8 +225,8 @@ export const GasTrackerWidget: React.FC = () => {
       </Card>
 
       <Modal isOpen={isAiTipsModalOpen} onClose={() => setIsAiTipsModalOpen(false)} title="AI Gas Optimization Tips">
-          {isApiKeyMissing && aiGasTips && aiGasTips.includes("API_KEY is not configured") && ( 
-               <AlertMessage type="warning" title="API Key Missing" message="AI Gas Tips are unavailable because the API_KEY for Gemini is not configured in the application environment." />
+          {isApiKeyMissing && aiGasTips && aiGasTips.includes("is not configured") && ( 
+               <AlertMessage type="warning" title="AI Provider Missing" message={`AI Gas Tips are unavailable because ${aiService.getProviderName()} is not configured in the application environment.`} />
           )}
           {isAiLoading && <div className="flex items-center justify-center py-6"><Loader2 size={28} className="animate-spin text-primary" /><p className="ml-3 text-muted-dark">Loading AI Tips...</p></div>}
           {aiGasTips && !isAiLoading && (

@@ -1,9 +1,9 @@
 import React from 'react';
-import { Card } from '../../design-system/components/Card';
+import { Card } from '../../components/ui/Card';
 import { Award, Star, Sparkles, Droplets, ListChecks, WalletCards, NotebookPen, CalendarCheck } from 'lucide-react'; // Added CalendarCheck
 import { useAppContext } from '../../contexts/AppContext';
 import { UserBadge } from '../../types';
-import { EnhancedLineChart as LineChart } from '../../components/charts/LineChart';
+import { LineChart } from '../../components/charts/LineChart';
 import { ChartData } from 'chart.js';
 
 interface UserStatsWidgetProps {
@@ -96,7 +96,7 @@ export const UserStatsWidget: React.FC<UserStatsWidgetProps> = ({ points }) => {
   const currentStreak = appData.settings.currentStreak || 0;
 
   const achievementsContent = achievedBadges.length === 0 ? (
-    <p className="text-sm text-[var(--color-text-muted-dark)]">No badges unlocked yet. Keep farming!</p>
+    <p className="text-sm text-muted-dark">No badges unlocked yet. Keep farming!</p>
   ) : (
     <div className="grid grid-cols-2 sm:grid-cols-2 gap-3 max-h-48 overflow-y-auto pr-1">
       {achievedBadges.map(badge => {
@@ -104,7 +104,7 @@ export const UserStatsWidget: React.FC<UserStatsWidgetProps> = ({ points }) => {
         return (
           <div key={badge.id} title={`${badge.name}: ${badge.description} (Achieved: ${new Date(badge.achievedDate!).toLocaleDateString()})`} className="flex flex-col items-center p-2 bg-background-dark/50 dark:bg-card-dark/70 rounded-lg text-center hover:shadow-md transition-shadow">
             <IconComponent size={28} className="mb-1 text-accent_yellow" />
-            <p className="text-xs font-medium text-[var(--color-text-primary)] truncate w-full">{badge.name}</p>
+            <p className="text-xs font-medium text-white truncate w-full">{badge.name}</p>
           </div>
         );
       })}
@@ -112,18 +112,18 @@ export const UserStatsWidget: React.FC<UserStatsWidgetProps> = ({ points }) => {
   );
 
   return (
-    <Card>
+    <Card title="Your Stats & Achievements">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
         {/* Left Column: Points and Level */}
         <div className="md:col-span-1 flex flex-col items-center justify-around gap-4 p-4 rounded-lg">
           <div className="text-center">
             <Star size={32} className="mx-auto mb-1 text-accent_yellow" />
-            <p className="text-4xl font-extrabold text-[var(--color-text-primary)]">{points.toLocaleString()}</p>
-            <p className="text-sm text-[var(--color-text-muted-dark)]">Total Points Earned</p>
+            <p className="text-4xl font-extrabold text-white">{points.toLocaleString()}</p>
+            <p className="text-sm text-muted-dark">Total Points Earned</p>
           </div>
           <div className="text-center w-full">
             <Award size={32} className="mx-auto mb-1 text-accent_yellow" />
-            <p className="text-4xl font-extrabold text-[var(--color-text-primary)]">Level {level}</p>
+            <p className="text-4xl font-extrabold text-white">Level {level}</p>
             <div className="w-full bg-progress_track-dark rounded-full h-2.5 mt-1.5">
               <div 
                 className="bg-primary h-2.5 rounded-full"
@@ -131,25 +131,25 @@ export const UserStatsWidget: React.FC<UserStatsWidgetProps> = ({ points }) => {
                 title={`${points.toLocaleString()}/${nextLevelPoints.toLocaleString()} points to Level ${level+1}`}
               ></div>
             </div>
-            <p className="text-xs text-[var(--color-text-muted-dark)] mt-1">{points.toLocaleString()} / {nextLevelPoints.toLocaleString()} to Level {level+1}</p>
+            <p className="text-xs text-muted-dark mt-1">{points.toLocaleString()} / {nextLevelPoints.toLocaleString()} to Level {level+1}</p>
           </div>
           {currentStreak > 0 && (
             <div className="text-center mt-2">
               <CalendarCheck size={28} className="mx-auto mb-1 text-accent_yellow" />
-              <p className="text-xl font-semibold text-[var(--color-text-primary)]">🔥 {currentStreak} Day Streak!</p>
+              <p className="text-xl font-semibold text-white">🔥 {currentStreak} Day Streak!</p>
             </div>
           )}
         </div>
 
         {/* Middle Column: Achievements */}
         <div className="md:col-span-1 space-y-3">
-          <h4 className="text-md font-semibold text-[var(--color-text-primary)]">Achievements Unlocked:</h4>
+          <h4 className="text-md font-semibold text-white">Achievements Unlocked:</h4>
           {achievementsContent}
         </div>
         
         {/* Right Column: Points History Chart */}
         <div className="md:col-span-1 space-y-3">
-             <h4 className="text-md font-semibold text-[var(--color-text-primary)]">Points History (Last 7 Days):</h4>
+             <h4 className="text-md font-semibold text-white">Points History (Last 7 Days):</h4>
              <div className="h-48"> 
                 <LineChart 
                   data={pointsHistoryChartData} 
@@ -167,7 +167,7 @@ export const UserStatsWidget: React.FC<UserStatsWidgetProps> = ({ points }) => {
         </div>
       </div>
       
-      <p className="text-xs text-center mt-4 text-[var(--color-text-muted-dark)]">
+      <p className="text-xs text-center mt-4 text-muted-dark">
         Keep completing tasks to earn more points, level up, and unlock achievements!
       </p>
     </Card>

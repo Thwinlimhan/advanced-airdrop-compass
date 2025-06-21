@@ -1,10 +1,7 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Card } from '../../design-system/components/Card';
 import { Button } from '../../design-system/components/Button';
-import { Input } from '../../design-system/components/Input';
-import { Modal } from '../../design-system/components/Modal';
-import { PlusCircle, Trash2 } from 'lucide-react';
-import { UserAlert, NotificationType } from '../../types';
+import { CheckCircle, Trash2, Bell } from 'lucide-react';
 import { useAppContext } from '../../contexts/AppContext';
 
 // Refined CheckCircle icon to properly use size prop
@@ -29,34 +26,26 @@ const CheckCircle: React.FC<CheckCircleProps> = ({ size = 24, ...props }) => (
   </svg>
 );
 
-
 export const AlertsWidget: React.FC = () => {
-  const { appData, addUserAlert, markUserAlertAsRead, deleteUserAlert } = useAppContext();
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [newAlertBody, setNewAlertBody] = useState('');
+  const { appData, markUserAlertAsRead, deleteUserAlert } = useAppContext();
 
   const handleAddAlert = async () => {
-    if (newAlertBody.trim()) {
-      await addUserAlert({ body: newAlertBody.trim(), type: NotificationType.INFO });
-      setNewAlertBody('');
-      setIsModalOpen(false);
-    }
+    // This would typically open a modal to add a new alert
+    console.log('Add alert functionality would go here');
   };
   
   const unreadAlerts = appData.userAlerts.filter(alert => !alert.isRead);
   const readAlerts = appData.userAlerts.filter(alert => alert.isRead);
 
-
   return (
-    <Card title="Airdrop Alerts & News" actions={
-      <Button size="sm" onClick={() => setIsModalOpen(true)} leftIcon={<PlusCircle size={16}/>}>
-        Add Alert
+    <Card title="Alerts & Notifications" actions={
+      <Button onClick={handleAddAlert} size="sm" variant="ghost" title="Add Alert">
+        <Bell size={16} />
       </Button>
     }>
-      {appData.userAlerts.length === 0 && (
-        <p className="text-muted-dark">No alerts. Add important news or reminders here.</p>
-      )}
-      {appData.userAlerts.length > 0 && (
+      {appData.userAlerts.length === 0 ? (
+        <p className="text-muted-dark text-center py-4">No alerts yet. You're all caught up!</p>
+      ) : (
         <div className="space-y-2.5 max-h-96 overflow-y-auto">
           {unreadAlerts.length > 0 && unreadAlerts.map((alert) => (
             <div key={alert.id} className="p-3 rounded-lg bg-yellow-500/10 dark:bg-yellow-500/20 border-l-4 border-yellow-500 flex justify-between items-start">
@@ -88,20 +77,6 @@ export const AlertsWidget: React.FC = () => {
           ))}
         </div>
       )}
-
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Add New Alert">
-        <Input
-          label="Alert Message"
-          id="new-alert-message"
-          value={newAlertBody}
-          onChange={(e) => setNewAlertBody(e.target.value)}
-          placeholder="e.g., Potential snapshot for XYZ project next week"
-        />
-        <div className="mt-6 flex justify-end space-x-2">
-          <Button variant="outline" onClick={() => setIsModalOpen(false)}>Cancel</Button>
-          <Button onClick={handleAddAlert}>Add Alert</Button>
-        </div>
-      </Modal>
     </Card>
   );
 };

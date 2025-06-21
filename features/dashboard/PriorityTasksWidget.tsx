@@ -1,10 +1,9 @@
 import React from 'react';
 import { Card } from '../../design-system/components/Card';
 import { Button } from '../../design-system/components/Button';
-import { AlertCircle, CheckCircle } from 'lucide-react';
+import { CheckCircle, Clock, AlertTriangle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAppContext } from '../../contexts/AppContext';
-import { useToast } from '../../hooks/useToast';
 import { formatRelativeDate } from '../../utils/formatting';
 
 interface PriorityTaskItem {
@@ -22,12 +21,10 @@ interface PriorityTasksWidgetProps {
 }
 
 export const PriorityTasksWidget: React.FC<PriorityTasksWidgetProps> = ({ tasks }) => {
-  const { completeRecurringTask: contextCompleteRecurringTask } = useAppContext();
-  const { addToast } = useToast();
+  const { completeRecurringTask } = useAppContext();
 
   const handleCompleteRecurringTask = (taskId: string, taskName: string) => {
-    contextCompleteRecurringTask(taskId);
-    addToast(`Task "${taskName}" marked as done!`, 'success');
+    completeRecurringTask(taskId);
   };
 
   let mainContent;
@@ -39,13 +36,19 @@ export const PriorityTasksWidget: React.FC<PriorityTasksWidgetProps> = ({ tasks 
         {tasks.slice(0, 10).map((task) => (
           <li key={task.id} className={`p-3 rounded-lg flex items-start justify-between ${task.isOverdue ? 'bg-red-500/10 dark:bg-red-500/20 border-l-4 border-red-500' : 'bg-background-dark/30 dark:bg-card-dark/70'}`}>
             <div className="flex-grow">
-              <div className="flex items-center">
-                 {task.isOverdue && <AlertCircle size={16} className="mr-2 text-red-400 flex-shrink-0" />}
-                <h4 className="font-medium text-white">{task.name}</h4>
+              <div className="flex items-center gap-2">
+                {task.isOverdue ? (
+                  <AlertTriangle size={16} className="text-red-400 flex-shrink-0" />
+                ) : (
+                  <Clock size={16} className="text-muted-dark flex-shrink-0" />
+                )}
+                <p className={`text-sm ${task.isOverdue ? 'text-red-400 font-semibold' : 'text-white'}`}>
+                  {task.name}
+                </p>
               </div>
               {task.airdropName && (
-                <Link to={`/airdrops/${task.airdropId}`} className="text-xs text-primary hover:underline block">
-                  For: {task.airdropName}
+                <Link to={`/airdrops/${task.airdropId}`} className="text-xs text-primary hover:underline">
+                  {task.airdropName}
                 </Link>
               )}
                {task.dueDate && (
@@ -54,41 +57,31 @@ export const PriorityTasksWidget: React.FC<PriorityTasksWidgetProps> = ({ tasks 
                 </p>
               )}
             </div>
-            <div className="flex items-center space-x-1 ml-2 flex-shrink-0">
-              {task.type === 'recurring' && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleCompleteRecurringTask(task.id, task.name)}
-                  className="p-1 text-green-400 hover:text-green-300"
-                  title="Mark as Done"
-                >
-                  <CheckCircle size={18} />
-                </Button>
-              )}
-              <Link
-                to={task.type === 'recurring' ? `/tasks?taskId=${task.id}` : `/airdrops/${task.airdropId}?highlightTaskId=${task.id}`}
-                className="text-sm text-primary hover:underline p-1"
+            {task.type === 'recurring' && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleCompleteRecurringTask(task.id, task.name)}
+                className="p-1 text-green-400 hover:text-green-300"
+                title="Mark as Done"
               >
-                View
-              </Link>
-            </div>
+                <CheckCircle size={16} />
+              </Button>
+            )}
           </li>
         ))}
       </ul>
     );
   }
 
-  const viewAllLink = tasks.length > 10 ? (
-    <Link to="/tasks" className="mt-4 block text-center text-sm text-primary hover:underline">
-      View all tasks ({tasks.length})
-    </Link>
-  ) : null;
-
   return (
-    <Card title="Priority Tasks">
+    <Card title="Priority Tasks" className="h-full">
       {mainContent}
-      {viewAllLink}
+      {tasks.length > 10 && (
+        <p className="text-xs text-muted-dark mt-2 text-center">
+          Showing top 10 tasks. View all tasks in the Tasks section.
+        </p>
+      )}
     </Card>
   );
 };

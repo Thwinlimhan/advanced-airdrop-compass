@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Advanced Crypto Airdrop Compass</title>
+  <title>AirdropCompass - Advanced Crypto Airdrop Management</title>
   
   <!-- PWA Manifest -->
   <link rel="manifest" href="/manifest.json">
@@ -12,11 +12,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="AirdropCompass">
-  <meta name="theme-color" content="#8b5cf6" id="theme-color-meta">
+  <meta name="theme-color" content="#885AF8" id="theme-color-meta">
   <meta name="msapplication-TileColor" content="#8b5cf6">
   
   <!-- SEO Meta Tags -->
-  <meta name="description" content="Advanced Crypto Airdrop Compass - Track, manage, and strategize crypto airdrops with AI-powered insights">
+  <meta name="description" content="Track, manage, and optimize your crypto airdrop farming strategy with AI-powered insights and comprehensive analytics.">
   <meta name="keywords" content="crypto, airdrop, DeFi, blockchain, portfolio, tracking">
   <meta name="author" content="MiniMax Agent">
   
@@ -34,7 +34,7 @@
   <meta name="twitter:image" content="/assets/twitter-image.png">
   
   <!-- Favicon -->
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/svg+xml" href="/vite.svg">
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   
@@ -43,7 +43,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   
   <!-- Enhanced Font Loading -->
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" id="main-font-link">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   
   <!-- Tailwind CSS with Enhanced Configuration -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -54,18 +54,38 @@
         extend: {
           colors: {
             primary: {
-              50: 'rgb(var(--color-primary-50) / <alpha-value>)',
-              100: 'rgb(var(--color-primary-100) / <alpha-value>)',
-              200: 'rgb(var(--color-primary-200) / <alpha-value>)',
-              300: 'rgb(var(--color-primary-300) / <alpha-value>)',
-              400: 'rgb(var(--color-primary-400) / <alpha-value>)',
-              500: 'rgb(var(--color-primary-500) / <alpha-value>)',
-              600: 'rgb(var(--color-primary-600) / <alpha-value>)',
-              700: 'rgb(var(--color-primary-700) / <alpha-value>)',
-              800: 'rgb(var(--color-primary-800) / <alpha-value>)',
-              900: 'rgb(var(--color-primary-900) / <alpha-value>)',
-              950: 'rgb(var(--color-primary-950) / <alpha-value>)',
-              DEFAULT: 'rgb(var(--color-primary-500) / <alpha-value>)'
+              light: 'rgba(var(--color-accent-rgb, 136, 90, 248) / <alpha-value>)',
+              dark: 'rgba(var(--color-accent-rgb, 136, 90, 248) / <alpha-value>)',
+              DEFAULT: 'rgba(var(--color-accent-rgb, 136, 90, 248) / <alpha-value>)',
+            },
+            secondary: {
+              light: '#F0EDFF',
+              dark: '#4C2F99',
+              DEFAULT: '#F0EDFF',
+            },
+            background: {
+              light: '#FFFFFF',
+              dark: '#1E1E2D',
+            },
+            card: {
+              light: '#FFFFFF',
+              dark: '#27293E',
+            },
+            text: {
+              light: '#111827',
+              dark: '#FFFFFF',
+              primary: 'rgba(var(--color-accent-rgb, 136, 90, 248) / <alpha-value>)',
+            },
+            muted: {
+              light: '#6B7280',
+              dark: '#A7A7A7',
+            },
+            accent_yellow: '#FFC107',
+            accent_blue: '#00BFFF',
+            accent_teal: '#14B8A6',
+            accent_pink: '#EC4899',
+            progress_track: {
+              dark: '#3A3D57',
             },
             gray: {
               50: '#f8fafc',
@@ -82,7 +102,7 @@
             }
           },
           fontFamily: {
-            sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', '"Helvetica Neue"', 'Arial', 'sans-serif'],
+            sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', '"Helvetica Neue"', 'Arial', '"Noto Sans"', 'sans-serif', '"Apple Color Emoji"', '"Segoe UI Emoji"', '"Segoe UI Symbol"', '"Noto Color Emoji"'],
             mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', '"Liberation Mono"', '"Courier New"', 'monospace']
           },
           spacing: {
@@ -92,7 +112,10 @@
             '128': '32rem'
           },
           borderRadius: {
-            'DEFAULT': '0.5rem',
+            'DEFAULT': '0.375rem',
+            'lg': '0.75rem',
+            'xl': '1rem',
+            '2xl': '1.5rem',
             '4xl': '2rem',
             '5xl': '2.5rem'
           },
@@ -100,7 +123,9 @@
             'soft': '0 2px 15px -3px rgba(0, 0, 0, 0.07), 0 10px 20px -2px rgba(0, 0, 0, 0.04)',
             'glow': '0 0 20px rgb(var(--color-primary-500) / 0.3)',
             'glow-lg': '0 0 40px rgb(var(--color-primary-500) / 0.4)',
-            'inner-soft': 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)'
+            'inner-soft': 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)',
+            'soft-dark': '0 4px 15px rgba(0, 0, 0, 0.1), 0 0 5px rgba(136, 90, 248, 0.2)',
+            'soft-light': '0 4px 15px rgba(0, 0, 0, 0.05)',
           },
           animation: {
             'fade-in': 'fadeIn 0.5s ease-in-out',

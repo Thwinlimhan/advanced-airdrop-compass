@@ -17,27 +17,28 @@ export const AirdropDiscoveryWidget: React.FC = () => {
   const { addToast } = useToast();
   const [isApiKeyMissing, setIsApiKeyMissing] = useState(false);
   const [selectedSuggestion, setSelectedSuggestion] = useState<DiscoveredAirdropSuggestion | null>(null);
-
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
 
   useEffect(() => {
     if (!process.env.API_KEY) {
       setIsApiKeyMissing(true);
+      setError("API_KEY for AI features is not configured. AI-powered discovery is unavailable.");
     }
   }, []);
 
   const mapAiConfidenceToEnum = (aiConfidence?: 'Low' | 'Medium' | 'High'): ConfidenceLevel | undefined => {
     if (!aiConfidence) return undefined;
     switch (aiConfidence.toLowerCase()) {
-        case 'low': return ConfidenceLevel.LOW;
-        case 'medium': return ConfidenceLevel.MEDIUM;
-        case 'high': return ConfidenceLevel.HIGH;
-        default: return undefined;
+      case 'high': return ConfidenceLevel.HIGH;
+      case 'medium': return ConfidenceLevel.MEDIUM;
+      case 'low': return ConfidenceLevel.LOW;
+      default: return undefined;
     }
   }
 
   const fetchSuggestions = async () => {
     if (isApiKeyMissing) {
-      setError("API_KEY for AI Discovery is not configured. This feature is unavailable.");
+      setError("API_KEY for AI features is not configured. AI-powered discovery is unavailable.");
       addToast("AI Discovery disabled: API Key missing.", "warning");
       return;
     }
@@ -106,9 +107,11 @@ Return the response as a JSON array of objects. Ensure valid JSON format. ABSOLU
 
   const handleViewDetails = (suggestion: DiscoveredAirdropSuggestion) => {
     setSelectedSuggestion(suggestion);
+    setIsDetailModalOpen(true);
   };
   
   const handleCloseModal = () => {
+    setIsDetailModalOpen(false);
     setSelectedSuggestion(null);
   };
 
@@ -124,7 +127,7 @@ Return the response as a JSON array of objects. Ensure valid JSON format. ABSOLU
     });
     addToast(`${suggestion.projectName} added to watchlist!`, 'success');
     setSuggestions(prev => prev.filter(s => s.id !== suggestion.id));
-    setSelectedSuggestion(null); // Close modal after adding
+    handleCloseModal();
   };
 
   return (
@@ -150,19 +153,19 @@ Return the response as a JSON array of objects. Ensure valid JSON format. ABSOLU
         Let AI scan for potential (fictional, for demo) airdrop opportunities based on common patterns. Add promising ones to your watchlist.
       </p>
       {isApiKeyMissing && ( 
-          <AlertMessage type="warning" title="Feature Unavailable" message="AI Discovery requires an API_KEY to be configured. This feature is currently disabled." />
+          <AlertMessage type="warning" title="API Key Missing" message="AI features require an API_KEY. This feature is currently disabled." className="mb-4" />
       )}
       {error && !isApiKeyMissing && ( 
         <AlertMessage type="error" title="Discovery Failed" message={error} onDismiss={() => setError(null)} />
       )}
-      {suggestions.length > 0 && !isLoading && !error && (
+      {suggestions.length > 0 && !isLoading && !error && !isApiKeyMissing && (
         <div className="space-y-2.5 max-h-80 overflow-y-auto pr-2"> {/* Adjusted spacing */}
           {suggestions.map(suggestion => (
             <div key={suggestion.id} className="p-3 rounded-lg bg-background-dark/50 dark:bg-card-dark/70 border border-gray-700/50 hover:shadow-md transition-shadow"> {/* Darker item background */}
               <div className="flex justify-between items-start">
                 <div>
                   <h5 className="font-semibold text-primary">{suggestion.projectName}</h5> {/* Primary accent for name */}
-                  <p className="text-xs text-muted-dark">{suggestion.ecosystem} - AI Confidence: {suggestion.aiConfidence || 'N/A'}</p>
+                  <p className="text-xs text-muted-light dark:text-muted-dark">{suggestion.ecosystem} - AI Confidence: {suggestion.aiConfidence || 'N/A'}</p>
                 </div>
                  <Button size="sm" variant="ghost" onClick={() => handleViewDetails(suggestion)} leftIcon={<ExternalLink size={14} className="text-muted-dark"/>} className="text-muted-dark hover:text-white">
                   View Details
@@ -181,7 +184,7 @@ Return the response as a JSON array of objects. Ensure valid JSON format. ABSOLU
     </Card>
     
     <DiscoveredAirdropDetailModal
-        isOpen={!!selectedSuggestion}
+        isOpen={isDetailModalOpen}
         onClose={handleCloseModal}
         suggestion={selectedSuggestion}
         onAddToWatchlist={handleAddToWatchlistFromModal}

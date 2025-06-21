@@ -1,31 +1,17 @@
-import React, { useMemo, useState, useCallback, DragEvent, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PageWrapper } from '../../components/layout/PageWrapper';
+import { Card } from '../../design-system/components/Card';
+import { useAppContext } from '../../contexts/AppContext';
+import { Airdrop, AirdropTask, AirdropPriority, RecurringTask } from '../../types';
 import { DashboardSummarySection } from './SummaryWidget';
-import { GasTrackerWidget } from './GasTrackerWidget';
 import { PriorityTasksWidget } from './PriorityTasksWidget';
+import { GasTrackerWidget } from './GasTrackerWidget';
 import { AlertsWidget } from './AlertsWidget';
 import { UserStatsWidget } from './UserStatsWidget';
-import { AirdropDiscoveryWidget } from '../discovery/AirdropDiscoveryWidget'; // New
-import { ErrorBoundary } from '../../components/ErrorBoundary';
-import { useAppContext } from '../../contexts/AppContext';
-import { AirdropStatus, RecurringTask, AirdropTask as SingleAirdropTask, WidgetKey, AirdropPriority } from '../../types';
-import { DEFAULT_SETTINGS } from '../../constants';
+import { AirdropDiscoveryWidget } from '../discovery/AirdropDiscoveryWidget';
 import { DashboardTour } from './DashboardTour';
-import { Card, CardContent, CardHeader } from '../../design-system/components/Card';
-import { SummaryWidget } from './SummaryWidget';
-import { useTranslation } from '../../hooks/useTranslation';
-import { useToast } from '../../hooks/useToast';
-import { 
-  TrendingUp, 
-  CheckCircle, 
-  Clock, 
-  DollarSign, 
-  AlertTriangle,
-  Droplets,
-  Search,
-  Trophy,
-  Settings
-} from 'lucide-react';
+import { ErrorBoundary } from '../../components/ErrorBoundary';
+import { WidgetKey, WidgetType, DashboardWidgetConfig } from '../../types';
 
 interface PriorityTaskItem {
   id: string;
@@ -41,9 +27,9 @@ interface PriorityTaskItem {
 interface DraggableWidgetProps {
   widgetKey: WidgetKey;
   children: React.ReactNode;
-  onDragStart: (e: DragEvent<HTMLDivElement>, key: WidgetKey) => void;
-  onDragOver: (e: DragEvent<HTMLDivElement>) => void;
-  onDrop: (e: DragEvent<HTMLDivElement>, key: WidgetKey) => void;
+  onDragStart: (e: React.DragEvent<HTMLDivElement>, key: WidgetKey) => void;
+  onDragOver: (e: React.DragEvent<HTMLDivElement>) => void;
+  onDrop: (e: React.DragEvent<HTMLDivElement>, key: WidgetKey) => void;
   isDragging?: boolean;
 }
 
@@ -54,7 +40,7 @@ const DraggableWidgetWrapper: React.FC<DraggableWidgetProps> = ({ widgetKey, chi
       onDragStart={(e) => onDragStart(e, widgetKey)}
       onDragOver={onDragOver}
       onDrop={(e) => onDrop(e, widgetKey)}
-      className={`transition-opacity ${isDragging ? 'opacity-50' : 'opacity-100'}`}
+      className={`cursor-move transition-opacity ${isDragging ? 'opacity-50' : ''}`}
     >
       {children}
     </div>
@@ -62,351 +48,237 @@ const DraggableWidgetWrapper: React.FC<DraggableWidgetProps> = ({ widgetKey, chi
 };
 
 export const DashboardPage: React.FC = () => {
-  const { appData, updateSettings, markTutorialAsCompleted } = useAppContext();
-  const { settings } = appData;
-  const [draggedWidgetKey, setDraggedWidgetKey] = useState<WidgetKey | null>(null);
+  const { appData, markTutorialAsCompleted, completeRecurringTask, updateDashboardWidgetOrder } = useAppContext();
   const [isTourOpen, setIsTourOpen] = useState(false);
+  const [draggedWidgetKey, setDraggedWidgetKey] = useState<WidgetKey | null>(null);
 
   useEffect(() => {
+    const settings = appData.settings;
     if (settings.tutorialsCompleted && !settings.tutorialsCompleted.dashboardTourCompleted) {
       setIsTourOpen(true);
     }
-  }, [settings.tutorialsCompleted]);
+  }, [appData.settings.tutorialsCompleted]);
 
   const handleTourClose = () => {
     markTutorialAsCompleted('dashboardTourCompleted');
     setIsTourOpen(false);
   };
 
-  const activeAirdrops = useMemo(() => {
-    return appData.airdrops.filter(a => !a.isArchived);
-  }, [appData.airdrops]);
+  // Calculate dashboard metrics
+  const activeAirdropsCount = appData.airdrops.filter(a => !a.isArchived).length;
+  
+  const totalTasksCompleted = appData.airdrops.reduce((total, airdrop) => {
+    const countCompletedTasksRecursive = (tasks: AirdropTask[]): number => {
+      return tasks.reduce((sum, task) => {
+        let completed = task.completed ? 1 : 0;
+        if (task.subTasks && task.subTasks.length > 0) {
+          completed += countCompletedTasksRecursive(task.subTasks);
+        }
+        return sum + completed;
+      }, 0);
+    };
+    return total + countCompletedTasksRecursive(airdrop.tasks);
+  }, 0);
 
-  const activeAirdropsCount = useMemo(() => {
-    return activeAirdrops.filter(a =>
-      a.myStatus === AirdropStatus.IN_PROGRESS ||
-      (a.myStatus === AirdropStatus.NOT_STARTED && (a.status === AirdropStatus.LIVE || a.status === AirdropStatus.CONFIRMED))
-    ).length;
-  }, [activeAirdrops]);
+  const upcomingPriorityTasks: PriorityTaskItem[] = [];
 
-  const totalTasksCompleted = useMemo(() => {
-    let count = 0;
-    activeAirdrops.forEach(airdrop => {
-      const countCompletedTasksRecursive = (tasks: SingleAirdropTask[]): number => {
-        let completedCount = 0;
-        tasks.forEach(task => {
-          if (task.completed) completedCount++;
-          if (task.subTasks && task.subTasks.length > 0) {
-            completedCount += countCompletedTasksRecursive(task.subTasks);
-          }
-        });
-        return completedCount;
-      };
-      count += countCompletedTasksRecursive(airdrop.tasks);
-    });
-    count += appData.recurringTasks.reduce((acc, task) => acc + (task.completionHistory?.length || 0), 0);
-    return count;
-  }, [activeAirdrops, appData.recurringTasks]);
-
-  const upcomingPriorityTasks = useMemo((): PriorityTaskItem[] => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const sevenDaysFromNow = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
-    const tasks: PriorityTaskItem[] = [];
-
-    appData.recurringTasks.forEach((task: RecurringTask) => {
-      if (task.isActive) {
-        const dueDate = new Date(task.nextDueDate);
-        dueDate.setHours(0,0,0,0);
-        const isOverdue = dueDate < today;
-        if (isOverdue || (dueDate >= today && dueDate <= sevenDaysFromNow)) {
-           tasks.push({
-            id: task.id, name: task.name, dueDate: task.nextDueDate, type: 'recurring',
-            airdropName: task.associatedAirdropId ? activeAirdrops.find(a => a.id === task.associatedAirdropId)?.projectName : undefined,
-            airdropId: task.associatedAirdropId, isOverdue: isOverdue,
-            airdropPriority: task.associatedAirdropId ? activeAirdrops.find(a => a.id === task.associatedAirdropId)?.priority : undefined,
+  // Gather airdrop tasks
+  appData.airdrops.forEach(airdrop => {
+    if (airdrop.isArchived) return;
+    
+    const gatherAirdropTasks = (tasksToScan: AirdropTask[], parentAirdrop: typeof airdrop) => {
+      tasksToScan.forEach(task => {
+        if (!task.completed && task.dueDate) {
+          const dueDate = new Date(task.dueDate);
+          const now = new Date();
+          const isOverdue = dueDate < now;
+          
+          upcomingPriorityTasks.push({
+            id: task.id,
+            name: task.description,
+            dueDate: task.dueDate,
+            type: 'airdrop' as const,
+            airdropName: parentAirdrop.projectName,
+            airdropId: parentAirdrop.id,
+            isOverdue,
+            airdropPriority: parentAirdrop.priority,
           });
         }
-      }
-    });
-
-    activeAirdrops.forEach(airdrop => {
-        if (airdrop.myStatus === AirdropStatus.IN_PROGRESS || airdrop.myStatus === AirdropStatus.NOT_STARTED) {
-            const gatherAirdropTasks = (tasksToScan: SingleAirdropTask[], parentAirdrop: typeof airdrop) => {
-                tasksToScan.forEach((task: SingleAirdropTask) => {
-                    if (!task.completed) {
-                        const dueDate = task.dueDate ? new Date(task.dueDate) : undefined;
-                        if(dueDate) dueDate.setHours(0,0,0,0);
-                        const isOverdue = dueDate ? dueDate < today : false;
-                        if (isOverdue || !dueDate || (dueDate && dueDate >= today && dueDate <= sevenDaysFromNow)) {
-                            tasks.push({
-                                id: task.id, name: task.description, dueDate: task.dueDate, type: 'airdrop',
-                                airdropName: parentAirdrop.projectName, airdropId: parentAirdrop.id, isOverdue: isOverdue,
-                                airdropPriority: parentAirdrop.priority,
-                            });
-                        }
-                    }
-                    if (task.subTasks && task.subTasks.length > 0) {
-                        gatherAirdropTasks(task.subTasks, parentAirdrop);
-                    }
-                });
-            };
-            gatherAirdropTasks(airdrop.tasks, airdrop);
+        if (task.subTasks && task.subTasks.length > 0) {
+          gatherAirdropTasks(task.subTasks, parentAirdrop);
         }
-    });
-
-    const priorityOrder: Record<AirdropPriority, number> = {
-      [AirdropPriority.HIGH]: 3,
-      [AirdropPriority.MEDIUM]: 2,
-      [AirdropPriority.LOW]: 1,
+      });
     };
+    gatherAirdropTasks(airdrop.tasks, airdrop);
+  });
 
-    return tasks.sort((a, b) => {
-        if (a.isOverdue && !b.isOverdue) return -1;
-        if (!a.isOverdue && b.isOverdue) return 1;
-
-        const priorityA = a.airdropPriority ? priorityOrder[a.airdropPriority] : 0;
-        const priorityB = b.airdropPriority ? priorityOrder[b.airdropPriority] : 0;
-        if (priorityA !== priorityB) return priorityB - priorityA;
-
-        const dateA = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
-        const dateB = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
-        if (dateA === Infinity && dateB !== Infinity) return 1;
-        if (dateA !== Infinity && dateB === Infinity) return -1;
-        return dateA - dateB;
-    });
-  }, [appData.recurringTasks, activeAirdrops]);
-
-  const estimatedPotentialValue = useMemo(() => {
-    let total = 0;
-    activeAirdrops.forEach(a => {
-        if (a.potential && !isNaN(parseFloat(a.potential.replace(/[^0-9.-]+/g,"")))) {
-           total += parseFloat(a.potential.replace(/[^0-9.-]+/g,""));
-        } else if (a.potential?.toLowerCase().includes('high')) total += 1000;
-        else if (a.potential?.toLowerCase().includes('medium')) total += 500;
-        else if (a.potential?.toLowerCase().includes('low')) total += 100;
-    });
-    return `$${total.toLocaleString()}`;
-  }, [activeAirdrops]);
-
-  const widgetVisibility = settings.dashboardWidgetVisibility || DEFAULT_SETTINGS.dashboardWidgetVisibility!;
-  const widgetOrder = settings.dashboardWidgetOrder || DEFAULT_SETTINGS.dashboardWidgetOrder!;
-  const userPoints = settings.userPoints || 0;
-
-  const handleDragStart = (e: DragEvent<HTMLDivElement>, key: WidgetKey) => {
-    e.dataTransfer.setData('widgetKey', key);
-    setDraggedWidgetKey(key);
-  };
-  const handleDragOver = (e: DragEvent<HTMLDivElement>) => e.preventDefault();
-
-  const handleDrop = (e: DragEvent<HTMLDivElement>, targetKey: WidgetKey) => {
-    e.preventDefault();
-    const sourceKey = e.dataTransfer.getData('widgetKey') as WidgetKey;
-    setDraggedWidgetKey(null);
-
-    if (sourceKey && sourceKey !== targetKey) {
-      const currentOrder = [...widgetOrder];
-      const sourceIndex = currentOrder.indexOf(sourceKey);
-      const targetIndex = currentOrder.indexOf(targetKey);
-
-      currentOrder.splice(sourceIndex, 1);
-      currentOrder.splice(targetIndex, 0, sourceKey);
-
-      updateSettings({ dashboardWidgetOrder: currentOrder });
+  // Gather recurring tasks
+  appData.recurringTasks.forEach(task => {
+    if (task.isActive && task.dueDate) {
+      const dueDate = new Date(task.dueDate);
+      const now = new Date();
+      const isOverdue = dueDate < now;
+      
+      upcomingPriorityTasks.push({
+        id: task.id,
+        name: task.name,
+        dueDate: task.dueDate,
+        type: 'recurring' as const,
+        isOverdue,
+      });
     }
+  });
+
+  // Sort by priority and due date
+  upcomingPriorityTasks.sort((a, b) => {
+    if (a.isOverdue && !b.isOverdue) return -1;
+    if (!a.isOverdue && b.isOverdue) return 1;
+    
+    if (a.airdropPriority && b.airdropPriority) {
+      const priorityOrder = { HIGH: 3, MEDIUM: 2, LOW: 1 };
+      const aPriority = priorityOrder[a.airdropPriority] || 0;
+      const bPriority = priorityOrder[b.airdropPriority] || 0;
+      if (aPriority !== bPriority) return bPriority - aPriority;
+    }
+    
+    if (a.dueDate && b.dueDate) {
+      return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+    }
+    
+    return 0;
+  });
+
+  const estimatedPotentialValue = appData.airdrops
+    .filter(a => !a.isArchived)
+    .reduce((total, airdrop) => {
+      const potential = airdrop.potential ? parseFloat(airdrop.potential.replace(/[^0-9.]/g, '')) || 0 : 0;
+      return total + potential;
+    }, 0);
+
+  const handleDragStart = (e: React.DragEvent<HTMLDivElement>, key: WidgetKey) => {
+    setDraggedWidgetKey(key);
+    e.dataTransfer.setData('text/plain', key);
   };
 
-  const widgets: Record<WidgetKey, React.ReactNode> = {
-    summary: widgetVisibility.summary ? (
-      <DashboardSummarySection
-        activeAirdrops={activeAirdropsCount}
-        tasksCompleted={totalTasksCompleted}
-        upcomingTasks={upcomingPriorityTasks.length}
-        estimatedValue={estimatedPotentialValue}
-      />
-    ) : null,
-    priorityTasks: widgetVisibility.priorityTasks ? <PriorityTasksWidget tasks={upcomingPriorityTasks} /> : null,
-    gas: widgetVisibility.gas ? <GasTrackerWidget /> : null,
-    alerts: widgetVisibility.alerts ? <AlertsWidget /> : null,
-    userStats: widgetVisibility.userStats ? <UserStatsWidget points={userPoints} /> : null,
-    aiDiscovery: widgetVisibility.aiDiscovery ? <AirdropDiscoveryWidget /> : null, // New widget
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => e.preventDefault();
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>, targetKey: WidgetKey) => {
+    e.preventDefault();
+    const draggedKey = e.dataTransfer.getData('text/plain') as WidgetKey;
+    
+    if (draggedKey && draggedKey !== targetKey) {
+      const currentOrder = appData.settings.dashboardWidgetOrder || [];
+      const newOrder = [...currentOrder];
+      
+      const draggedIndex = newOrder.indexOf(draggedKey);
+      const targetIndex = newOrder.indexOf(targetKey);
+      
+      if (draggedIndex !== -1 && targetIndex !== -1) {
+        newOrder.splice(draggedIndex, 1);
+        newOrder.splice(targetIndex, 0, draggedKey);
+        updateDashboardWidgetOrder(newOrder);
+      }
+    }
+    
+    setDraggedWidgetKey(null);
   };
 
-  const orderedVisibleWidgetKeys = widgetOrder.filter(key => widgetVisibility[key] && widgets[key]);
+  const widgetOrder = appData.settings.dashboardWidgetOrder || ['summary', 'userStats', 'aiDiscovery', 'priorityTasks', 'gasTracker', 'alerts'];
+  const orderedVisibleWidgetKeys = widgetOrder.filter(key => {
+    const widgetConfig = appData.settings.dashboardWidgets?.[key as WidgetKey];
+    return widgetConfig?.isVisible !== false;
+  });
+
+  const widgets = {
+    summary: <DashboardSummarySection
+      activeAirdrops={activeAirdropsCount}
+      tasksCompleted={totalTasksCompleted}
+      upcomingTasks={upcomingPriorityTasks.length}
+      estimatedValue={`$${estimatedPotentialValue.toLocaleString()}`}
+    />,
+    userStats: <UserStatsWidget points={appData.settings.userPoints || 0} />,
+    aiDiscovery: <AirdropDiscoveryWidget />,
+    priorityTasks: <PriorityTasksWidget tasks={upcomingPriorityTasks} />,
+    gasTracker: <GasTrackerWidget />,
+    alerts: <AlertsWidget />
+  };
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Welcome Section */}
-      <Card variant="elevated" padding="lg">
-        <CardHeader>
-          <h3 className="text-lg font-semibold flex items-center gap-2">
-            <Trophy size={24} className="text-accent" />
-            Welcome to Advanced Crypto Airdrop Compass
-          </h3>
-        </CardHeader>
-        <CardContent>
-          <p className="text-secondary">
-            Track your airdrops, manage tasks, and optimize your crypto strategy with AI-powered insights.
-          </p>
-        </CardContent>
-      </Card>
-
-      {/* Summary Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <SummaryWidget
-          title="Active Airdrops"
-          value={activeAirdropsCount}
-          icon={TrendingUp}
-          iconBgClass="bg-blue-100 dark:bg-blue-900/30"
-          iconColorClass="text-blue-600 dark:text-blue-400"
-        />
-        <SummaryWidget
-          title="Tasks Completed"
-          value={totalTasksCompleted}
-          icon={CheckCircle}
-          iconBgClass="bg-green-100 dark:bg-green-900/30"
-          iconColorClass="text-green-600 dark:text-green-400"
-        />
-        <SummaryWidget
-          title="Upcoming Tasks"
-          value={upcomingPriorityTasks.length}
-          icon={Clock}
-          iconBgClass="bg-yellow-100 dark:bg-yellow-900/30"
-          iconColorClass="text-yellow-600 dark:text-yellow-400"
-        />
-        <SummaryWidget
-          title="Estimated Value"
-          value={estimatedPotentialValue}
-          icon={DollarSign}
-          iconBgClass="bg-purple-100 dark:bg-purple-900/30"
-          iconColorClass="text-purple-600 dark:text-purple-400"
-        />
-      </div>
-
-      {/* Main Dashboard Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column */}
-        <div className="space-y-6">
-          {widgetVisibility.priorityTasks && (
-            <DraggableWidgetWrapper
-              widgetKey="priorityTasks"
-              onDragStart={handleDragStart}
-              onDragOver={handleDragOver}
-              onDrop={handleDrop}
-              isDragging={draggedWidgetKey === 'priorityTasks'}
-            >
-              <Card variant="elevated" padding="md" className="h-full">
-                <CardHeader>
-                  <h3 className="text-lg font-semibold flex items-center gap-2">
-                    <AlertTriangle size={20} className="text-warning" />
-                    Priority Tasks
-                  </h3>
-                </CardHeader>
-                <CardContent>
-                  <PriorityTasksWidget tasks={upcomingPriorityTasks} />
-                </CardContent>
-              </Card>
-            </DraggableWidgetWrapper>
-          )}
-
-          {widgetVisibility.alerts && (
-            <DraggableWidgetWrapper
-              widgetKey="alerts"
-              onDragStart={handleDragStart}
-              onDragOver={handleDragOver}
-              onDrop={handleDrop}
-              isDragging={draggedWidgetKey === 'alerts'}
-            >
-              <Card variant="elevated" padding="md" className="h-full">
-                <CardHeader>
-                  <h3 className="text-lg font-semibold flex items-center gap-2">
-                    <AlertTriangle size={20} className="text-error" />
-                    Alerts
-                  </h3>
-                </CardHeader>
-                <CardContent>
-                  <AlertsWidget />
-                </CardContent>
-              </Card>
-            </DraggableWidgetWrapper>
-          )}
-        </div>
-
-        {/* Center Column */}
-        <div className="space-y-6">
-          {widgetVisibility.userStats && (
-            <DraggableWidgetWrapper
-              widgetKey="userStats"
-              onDragStart={handleDragStart}
-              onDragOver={handleDragOver}
-              onDrop={handleDrop}
-              isDragging={draggedWidgetKey === 'userStats'}
-            >
-              <Card variant="elevated" padding="md" className="h-full">
-                <CardHeader>
-                  <h3 className="text-lg font-semibold flex items-center gap-2">
-                    <Trophy size={20} className="text-accent" />
-                    Your Progress
-                  </h3>
-                </CardHeader>
-                <CardContent>
-                  <UserStatsWidget points={userPoints} />
-                </CardContent>
-              </Card>
-            </DraggableWidgetWrapper>
-          )}
-
-          {widgetVisibility.gas && (
-            <DraggableWidgetWrapper
-              widgetKey="gas"
-              onDragStart={handleDragStart}
-              onDragOver={handleDragOver}
-              onDrop={handleDrop}
-              isDragging={draggedWidgetKey === 'gas'}
-            >
-              <Card variant="elevated" padding="md" className="h-full">
-                <CardHeader>
-                  <h3 className="text-lg font-semibold flex items-center gap-2">
-                    <Droplets size={20} className="text-info" />
-                    Gas Tracker
-                  </h3>
-                </CardHeader>
-                <CardContent>
-                  <GasTrackerWidget />
-                </CardContent>
-              </Card>
-            </DraggableWidgetWrapper>
-          )}
-        </div>
-
-        {/* Right Column */}
-        <div className="space-y-6">
-          {widgetVisibility.aiDiscovery && (
-            <DraggableWidgetWrapper
-              widgetKey="aiDiscovery"
-              onDragStart={handleDragStart}
-              onDragOver={handleDragOver}
-              onDrop={handleDrop}
-              isDragging={draggedWidgetKey === 'aiDiscovery'}
-            >
-              <Card variant="elevated" padding="md" className="h-full">
-                <CardHeader>
-                  <h3 className="text-lg font-semibold flex items-center gap-2">
-                    <Search size={20} className="text-success" />
-                    Airdrop Discovery
-                  </h3>
-                </CardHeader>
-                <CardContent>
-                  <AirdropDiscoveryWidget />
-                </CardContent>
-              </Card>
-            </DraggableWidgetWrapper>
-          )}
-        </div>
-      </div>
-
-      {/* Dashboard Tour */}
+    <PageWrapper>
       <DashboardTour isOpen={isTourOpen} onClose={handleTourClose} />
-    </div>
+      {orderedVisibleWidgetKeys.includes('summary') && (
+        <ErrorBoundary FallbackComponent={<div>Error loading Summary widget.</div>}>
+          <DraggableWidgetWrapper
+              widgetKey="summary"
+              onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop}
+              isDragging={draggedWidgetKey === 'summary'}
+          >
+            {widgets.summary}
+          </DraggableWidgetWrapper>
+        </ErrorBoundary>
+      )}
+      {orderedVisibleWidgetKeys.includes('userStats') && (
+        <div className="mt-6">
+          <ErrorBoundary FallbackComponent={<div>Error loading User Stats widget.</div>}>
+            <DraggableWidgetWrapper
+                widgetKey="userStats"
+                onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop}
+                isDragging={draggedWidgetKey === 'userStats'}
+            >
+              {widgets.userStats}
+            </DraggableWidgetWrapper>
+          </ErrorBoundary>
+        </div>
+      )}
+
+      {orderedVisibleWidgetKeys.includes('aiDiscovery') && ( 
+        <div className="mt-6">
+          <ErrorBoundary FallbackComponent={<div>Error loading AI Discovery widget.</div>}>
+            <DraggableWidgetWrapper
+                widgetKey="aiDiscovery"
+                onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop}
+                isDragging={draggedWidgetKey === 'aiDiscovery'}
+            >
+              {widgets.aiDiscovery}
+            </DraggableWidgetWrapper>
+          </ErrorBoundary>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+        <div className="lg:col-span-2 space-y-6">
+           {orderedVisibleWidgetKeys.includes('priorityTasks') && (
+            <ErrorBoundary FallbackComponent={<div>Error loading Priority Tasks widget.</div>}>
+              <DraggableWidgetWrapper
+                  widgetKey="priorityTasks"
+                  onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop}
+                  isDragging={draggedWidgetKey === 'priorityTasks'}
+              >
+                {widgets.priorityTasks}
+              </DraggableWidgetWrapper>
+            </ErrorBoundary>
+           )}
+        </div>
+        <div className="lg:col-span-1 space-y-6">
+          {orderedVisibleWidgetKeys
+            .filter(key => key !== 'summary' && key !== 'priorityTasks' && key !== 'userStats' && key !== 'aiDiscovery')
+            .map(key => (
+              <ErrorBoundary key={key} FallbackComponent={<div>Error loading widget.</div>}>
+                <DraggableWidgetWrapper
+                  widgetKey={key}
+                  onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop}
+                  isDragging={draggedWidgetKey === key}
+                >
+                  {widgets[key]}
+                </DraggableWidgetWrapper>
+              </ErrorBoundary>
+            )
+          )}
+        </div>
+      </div>
+      <p className="text-xs text-center mt-4 text-muted-light dark:text-muted-dark">
+        Tip: You can drag and drop widgets to reorder them on the dashboard. Widget visibility can be changed in Settings.
+      </p>
+    </PageWrapper>
   );
 };

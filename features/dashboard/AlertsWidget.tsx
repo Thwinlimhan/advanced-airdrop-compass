@@ -1,5 +1,5 @@
 import React from 'react';
-import { Card } from '../../design-system/components/Card';
+import { Card, CardHeader } from '../../design-system/components/Card';
 import { Button } from '../../design-system/components/Button';
 import { CheckCircle, Trash2, Bell } from 'lucide-react';
 import { useAppContext } from '../../contexts/AppContext';
@@ -38,11 +38,15 @@ export const AlertsWidget: React.FC = () => {
   const readAlerts = appData.userAlerts.filter(alert => alert.isRead);
 
   return (
-    <Card title="Alerts & Notifications" actions={
-      <Button onClick={handleAddAlert} size="sm" variant="ghost" title="Add Alert">
-        <Bell size={16} />
-      </Button>
-    }>
+    <Card>
+      <CardHeader 
+        title="Alerts & Notifications" 
+        action={
+          <Button onClick={handleAddAlert} size="sm" variant="ghost" title="Add Alert">
+            <Bell size={16} />
+          </Button>
+        }
+      />
       {appData.userAlerts.length === 0 ? (
         <p className="text-muted-dark text-center py-4">No alerts yet. You're all caught up!</p>
       ) : (

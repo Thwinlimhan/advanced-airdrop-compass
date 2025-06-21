@@ -1,9 +1,9 @@
 import React from 'react';
-import { Card } from '../../components/ui/Card';
+import { Card, CardHeader } from '../../design-system/components/Card';
 import { Award, Star, Sparkles, Droplets, ListChecks, WalletCards, NotebookPen, CalendarCheck } from 'lucide-react'; // Added CalendarCheck
 import { useAppContext } from '../../contexts/AppContext';
 import { UserBadge } from '../../types';
-import { LineChart } from '../../components/charts/LineChart';
+import { EnhancedLineChart as LineChart } from '../../components/charts/LineChart';
 import { ChartData } from 'chart.js';
 
 interface UserStatsWidgetProps {
@@ -112,7 +112,8 @@ export const UserStatsWidget: React.FC<UserStatsWidgetProps> = ({ points }) => {
   );
 
   return (
-    <Card title="Your Stats & Achievements">
+    <Card>
+      <CardHeader title="Your Stats & Achievements" />
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
         {/* Left Column: Points and Level */}
         <div className="md:col-span-1 flex flex-col items-center justify-around gap-4 p-4 rounded-lg">
@@ -153,7 +154,6 @@ export const UserStatsWidget: React.FC<UserStatsWidgetProps> = ({ points }) => {
              <div className="h-48"> 
                 <LineChart 
                   data={pointsHistoryChartData} 
-                  settings={appData.settings}
                   options={{ 
                     maintainAspectRatio: false, 
                     plugins: { legend: { display: false } },

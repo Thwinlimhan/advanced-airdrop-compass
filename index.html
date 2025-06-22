@@ -25,18 +25,14 @@
   <meta property="og:description" content="Track, manage, and strategize crypto airdrops with AI-powered insights">
   <meta property="og:type" content="website">
   <meta property="og:url" content="">
-  <meta property="og:image" content="/assets/og-image.png">
   
   <!-- Twitter Card Meta Tags -->
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Advanced Crypto Airdrop Compass">
   <meta name="twitter:description" content="Track, manage, and strategize crypto airdrops with AI-powered insights">
-  <meta name="twitter:image" content="/assets/twitter-image.png">
   
   <!-- Favicon -->
-  <link rel="icon" type="image/svg+xml" href="/vite.svg">
-  <link rel="icon" type="image/png" href="/favicon.png">
-  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   
   <!-- Font Preloads -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -359,16 +355,43 @@
   <div id="root" class="h-full"></div>
   <script type="module" src="/index.tsx"></script>
   <script>
+    // Enhanced service worker handling for development vs production
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/service-worker.js')
-          .then(registration => {
-            console.log('ServiceWorker registration successful with scope: ', registration.scope);
-          })
-          .catch(error => {
-            console.log('ServiceWorker registration failed: ', error);
+      if (window.location.hostname.includes('localhost')) {
+        // Development mode: Unregister any existing service workers
+        console.log('Development mode detected - clearing any existing service workers');
+        navigator.serviceWorker.getRegistrations().then(registrations => {
+          for (let registration of registrations) {
+            registration.unregister();
+            console.log('ServiceWorker unregistered for development mode:', registration.scope);
+          }
+        });
+        
+        // Also clear any cached service worker files
+        if ('caches' in window) {
+          caches.keys().then(cacheNames => {
+            return Promise.all(
+              cacheNames.map(cacheName => {
+                if (cacheName.includes('airdrop-compass') || cacheName.includes('workbox')) {
+                  console.log('Clearing cache:', cacheName);
+                  return caches.delete(cacheName);
+                }
+              })
+            );
           });
-      });
+        }
+      } else {
+        // Production mode: Register service worker
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/service-worker.js')
+            .then(registration => {
+              console.log('ServiceWorker registration successful with scope: ', registration.scope);
+            })
+            .catch(error => {
+              console.log('ServiceWorker registration failed: ', error);
+            });
+        });
+      }
     }
   </script>
 </body>

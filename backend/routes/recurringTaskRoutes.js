@@ -135,9 +135,26 @@ router.post('/:taskId/complete', async (req, res) => {
         return res.status(400).json({ message: 'Task is not active and cannot be completed.'})
     }
     if(!task.completionHistory) task.completionHistory = [];
+    
+    // Streak logic
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const dueDateForCheck = new Date(task.nextDueDate);
+    dueDateForCheck.setHours(0, 0, 0, 0);
+    
+    const isOverdue = dueDateForCheck < today;
+    let newStreak = task.currentStreak || 0;
+    
+    if (isOverdue) {
+      newStreak = 1; // Reset streak if task was completed late
+    } else {
+      newStreak += 1; // Increment streak for on-time completion
+    }
+    
     const completionDate = new Date().toISOString();
     task.completionHistory.push(completionDate);
     task.lastCompletedDate = completionDate;
+    task.currentStreak = newStreak;
     
     if (task.frequency !== 'One Time') { // 'One Time' corresponds to TaskFrequency.ONE_TIME
         task.nextDueDate = calculateNextDueDate(task, new Date());

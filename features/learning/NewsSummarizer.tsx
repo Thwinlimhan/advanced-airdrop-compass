@@ -1,13 +1,13 @@
-import React, { useState, useEffect } from 'react'; 
-import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
+import React, { useState, FormEvent, useEffect } from 'react';
 import { Card } from '../../design-system/components/Card';
 import { Input } from '../../design-system/components/Input';
 import { Button } from '../../design-system/components/Button';
 import { Textarea } from '../../design-system/components/Textarea';
 import { AlertMessage } from '../../components/ui/AlertMessage';
-import { Newspaper, Send, Loader2, FileText, Link as LinkIcon } from 'lucide-react';
+import { Newspaper, Send, Loader2, FileText, Link as LinkIcon, AlertTriangle } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
-import { useAppContext } from '../../contexts/AppContext';
+import { useLearningResourceStore } from '../../stores/learningResourceStore';
+import { aiService, isAIServiceAvailable } from '../../utils/aiService';
 
 export const NewsSummarizer: React.FC = () => {
   const [inputMode, setInputMode] = useState<'url' | 'text'>('url');
@@ -17,20 +17,30 @@ export const NewsSummarizer: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const { addToast } = useToast();
-  const { addLearningResource } = useAppContext();
+  const { addLearningResource } = useLearningResourceStore();
   const [isApiKeyMissing, setIsApiKeyMissing] = useState(false);
 
   useEffect(() => {
-    if (!process.env.API_KEY) {
-      setIsApiKeyMissing(true);
-      setError("API_KEY for AI News Summarizer is not configured. This feature is unavailable.");
-    }
+    const checkAIAvailability = async () => {
+      try {
+        const isAvailable = await aiService.isAvailable();
+        if (!isAvailable) {
+          setIsApiKeyMissing(true);
+          setError(`AI News Summarizer is unavailable because ${aiService.getProviderName()} is not configured or not available.`);
+        }
+      } catch (error) {
+        setIsApiKeyMissing(true);
+        setError(`AI News Summarizer is unavailable: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    };
+    
+    checkAIAvailability();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isApiKeyMissing) {
-        setError("API_KEY for AI News Summarizer is not configured. This feature is unavailable.");
+        setError(`AI News Summarizer is unavailable because ${aiService.getProviderName()} is not configured.`);
         addToast("AI Summarizer disabled: API Key missing.", "warning");
         return;
     }
@@ -48,8 +58,6 @@ export const NewsSummarizer: React.FC = () => {
     setError(null);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
-      
       let promptContent = '';
       if (inputMode === 'url') {
         promptContent = `Summarize the key points from the article at ${articleUrl} and specifically highlight any information related to crypto airdrops, token launches, or potential Sybil farming activities. If you cannot access the URL, please state so clearly.`;
@@ -60,13 +68,9 @@ export const NewsSummarizer: React.FC = () => {
 
       const systemInstruction = "You are an AI assistant specialized in analyzing cryptocurrency news articles. Your goal is to provide a concise summary focusing on airdrop-related information. Be factual and extract key details. If no airdrop info, state that. Start with a brief overall summary, then a section for 'Airdrop Insights' if any are found.";
 
-      const response: GenerateContentResponse = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-preview-04-17',
-        contents: promptContent,
-        config: { systemInstruction }
-      });
+      const fullPrompt = `${systemInstruction}\n\n${promptContent}`;
+      let textResponse = await aiService.generateContent(fullPrompt);
       
-      let textResponse = response.text;
       // It's generally better to ask the model NOT to use markdown fences in JSON prompts.
       // For text, it's less critical but good to be aware if it starts wrapping.
       const fenceRegex = /^```(\w*)?\s*\n?(.*?)\n?\s*```$/s; 
@@ -88,7 +92,7 @@ export const NewsSummarizer: React.FC = () => {
       addToast('Summary saved to Learning Hub.', 'info');
 
     } catch (err) {
-      console.error("Error calling Gemini API for news summarizer:", err);
+      console.error("Error calling AI service for news summarizer:", err);
       const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
       setError(`Failed to summarize: ${errorMessage}. If using URL, try pasting text instead.`);
       addToast(`Error: ${errorMessage}`, 'error');
@@ -107,7 +111,7 @@ export const NewsSummarizer: React.FC = () => {
         Paste an article URL (experimental, may not always work due to access restrictions) or article text to get a summary focusing on airdrop-related news.
       </p>
       {isApiKeyMissing && ( 
-          <AlertMessage type="warning" title="Feature Unavailable" message="AI News Summarizer requires an API_KEY to be configured. This feature is currently disabled." className="mb-4" />
+          <AlertMessage type="warning" title="Feature Unavailable" message={`AI News Summarizer requires ${aiService.getProviderName()} to be properly configured and available. This feature is currently disabled.`} className="mb-4" />
       )}
 
       <div className="mb-4 flex space-x-2">
@@ -138,7 +142,7 @@ export const NewsSummarizer: React.FC = () => {
             disabled={isLoading || isApiKeyMissing}
           />
         )}
-        <Button type="submit" disabled={isLoading || isApiKeyMissing} loading={isLoading} leftIcon={isLoading ? undefined : <Send size={18}/>}>
+        <Button type="submit" disabled={isLoading || isApiKeyMissing} leftIcon={isLoading ? undefined : <Send size={18}/>}>
           {isLoading ? 'Summarizing...' : (inputMode === 'url' ? 'Summarize URL' : 'Summarize Text')}
         </Button>
       </form>

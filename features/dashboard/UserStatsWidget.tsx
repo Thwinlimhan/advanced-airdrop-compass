@@ -1,7 +1,7 @@
 import React from 'react';
 import { Card, CardHeader } from '../../design-system/components/Card';
-import { Award, Star, Sparkles, Droplets, ListChecks, WalletCards, NotebookPen, CalendarCheck } from 'lucide-react'; // Added CalendarCheck
-import { useAppContext } from '../../contexts/AppContext';
+import { Award, Star, Sparkles, Droplets, ListChecks, WalletCards, NotebookPen, CalendarCheck } from 'lucide-react';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { UserBadge } from '../../types';
 import { EnhancedLineChart as LineChart } from '../../components/charts/LineChart';
 import { ChartData } from 'chart.js';
@@ -86,14 +86,13 @@ const generatePointsHistoryData = (currentPoints: number, accentColor: string): 
   };
 };
 
-
 export const UserStatsWidget: React.FC<UserStatsWidgetProps> = ({ points }) => {
-  const { appData } = useAppContext();
+  const { settings, userBadges } = useSettingsStore();
   const { level, progress, nextLevelPoints } = calculateLevel(points);
-  const achievedBadges = (appData.userBadges || []).filter(badge => badge.achieved);
+  const achievedBadges = userBadges.filter(badge => badge.achieved);
   // Pass accent color from settings to chart data generation
-  const pointsHistoryChartData = generatePointsHistoryData(points, appData.settings.accentColor || '#885AF8');
-  const currentStreak = appData.settings.currentStreak || 0;
+  const pointsHistoryChartData = generatePointsHistoryData(points, settings.accentColor || '#885AF8');
+  const currentStreak = settings.currentStreak || 0;
 
   const achievementsContent = achievedBadges.length === 0 ? (
     <p className="text-sm text-muted-dark">No badges unlocked yet. Keep farming!</p>
@@ -114,9 +113,9 @@ export const UserStatsWidget: React.FC<UserStatsWidgetProps> = ({ points }) => {
   return (
     <Card>
       <CardHeader title="Your Stats & Achievements" />
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         {/* Left Column: Points and Level */}
-        <div className="md:col-span-1 flex flex-col items-center justify-around gap-4 p-4 rounded-lg">
+        <div className="lg:col-span-1 flex flex-col items-center justify-around gap-4 p-4 rounded-lg bg-gray-50 dark:bg-gray-800/50">
           <div className="text-center">
             <Star size={32} className="mx-auto mb-1 text-accent_yellow" />
             <p className="text-4xl font-extrabold text-white">{points.toLocaleString()}</p>
@@ -143,13 +142,13 @@ export const UserStatsWidget: React.FC<UserStatsWidgetProps> = ({ points }) => {
         </div>
 
         {/* Middle Column: Achievements */}
-        <div className="md:col-span-1 space-y-3">
+        <div className="lg:col-span-1 space-y-3">
           <h4 className="text-md font-semibold text-white">Achievements Unlocked:</h4>
           {achievementsContent}
         </div>
         
         {/* Right Column: Points History Chart */}
-        <div className="md:col-span-1 space-y-3">
+        <div className="lg:col-span-1 space-y-3">
              <h4 className="text-md font-semibold text-white">Points History (Last 7 Days):</h4>
              <div className="h-48"> 
                 <LineChart 

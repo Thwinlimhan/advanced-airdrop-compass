@@ -6,415 +6,668 @@ import { Select } from '../../design-system/components/Select';
 import { Button } from '../../design-system/components/Button';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
 import { TagInput } from '../../components/ui/TagInput';
+import { CreatableSelect } from '../../components/ui/CreatableSelect';
 import { BLOCKCHAIN_OPTIONS, AIRDROP_STATUS_OPTIONS, MY_AIRDROP_STATUS_OPTIONS, AIRDROP_PRIORITY_OPTIONS, AIRDROP_PROJECT_CATEGORIES, AIRDROP_POTENTIAL_OPTIONS } from '../../constants';
-import { useAppContext } from '../../contexts/AppContext';
+import { useAirdropStore } from '../../stores/airdropStore';
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
-import { ImageUp, Loader2, Brain, PlusCircle, Trash2, Bell, Info } from 'lucide-react';
+import { ImageUp, Loader2, Brain, PlusCircle, Trash2, Bell, Info, Target, Globe, Link, Twitter, MessageCircle, Tag, FileText, Settings, ChevronDown, ChevronRight, AlertCircle, Plus, X, Calendar, DollarSign, Clock, CheckSquare, ExternalLink } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
-import { useTranslation } from '../../hooks/useTranslation'; // Added
+import { useTranslation } from '../../hooks/useTranslation';
+import { Modal } from '../../design-system/components/Modal';
+import { Card, CardHeader, CardContent } from '../../design-system/components/Card';
+import { useWalletStore } from '../../stores/walletStore';
+import { SubtaskChecklist } from '../tasks/SubtaskChecklist';
 
-interface AirdropFormProps {
-  onSubmit: (airdrop: Omit<Airdrop, 'id' | 'tasks' | 'transactions' | 'claimedTokens' | 'sybilChecklist' | 'roadmapEvents' | 'customFields' | 'dateAdded' | 'notificationOverrides'> | Airdrop) => Promise<void | Airdrop | null>; 
-  initialData?: Airdrop;
-  onClose: () => void;
+interface AirdropFormData {
+  projectName: string;
+  blockchain: string;
+  myStatus: string;
+  potential: string;
+  description: string;
+  website: string;
+  twitter: string;
+  discord: string;
+  telegram: string;
+  tags: string[];
+  notes: string;
+  eligibility: string;
+  dependencies: string[];
+  initialTasks: Array<{
+    id: string;
+    description: string;
+    completed: boolean;
+  }>;
 }
 
-export const AirdropForm: React.FC<AirdropFormProps> = ({ onSubmit, initialData, onClose }) => {
-  const { appData } = useAppContext();
-  const { addToast } = useToast();
-  const { t } = useTranslation(); // Added
-  
-  const getInitialNotificationToggleState = (key: keyof AirdropNotificationSettings, initialAirdropData?: Airdrop): boolean => {
-    if (initialAirdropData?.notificationOverrides && initialAirdropData.notificationOverrides[key] !== undefined) {
-      return initialAirdropData.notificationOverrides[key]!;
-    }
-    return appData.settings.defaultAirdropNotificationSettings[key];
-  };
+interface AirdropFormErrors {
+  projectName?: string;
+  blockchain?: string;
+  website?: string;
+  twitter?: string;
+  discord?: string;
+  telegram?: string;
+}
 
-  const [formData, setFormData] = useState<Partial<Airdrop>>({
+interface AirdropFormModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSubmit: (airdrop: AirdropFormData) => void;
+  initialAirdrop?: Partial<AirdropFormData>;
+  mode?: 'create' | 'edit';
+}
+
+export const AirdropFormModal: React.FC<AirdropFormModalProps> = ({
+  isOpen,
+  onClose,
+  onSubmit,
+  initialAirdrop = {},
+  mode = 'create'
+}) => {
+  const { wallets } = useWalletStore();
+  const { addToast } = useToast();
+  const { t } = useTranslation();
+
+  const [formData, setFormData] = useState<AirdropFormData>({
     projectName: '',
-    blockchain: BLOCKCHAIN_OPTIONS[0],
-    status: AirdropStatus.RUMORED,
-    potential: AIRDROP_POTENTIAL_OPTIONS[0],
-    myStatus: AirdropStatus.NOT_STARTED,
-    priority: AirdropPriority.MEDIUM,
+    blockchain: '',
+    myStatus: 'Not Started',
+    potential: 'Unknown',
     description: '',
-    officialLinks: { website: '', twitter: '', discord: '' },
-    eligibilityCriteria: '',
-    notes: '',
+    website: '',
+    twitter: '',
+    discord: '',
+    telegram: '',
     tags: [],
-    timeSpentHours: 0,
-    isArchived: false,
-    dependentOnAirdropIds: [],
-    leadsToAirdropIds: [],
-    logoBase64: undefined,
-    customFields: [],
-    notificationOverrides: initialData?.notificationOverrides ? { ...initialData.notificationOverrides } : undefined,
-    projectCategory: undefined,
+    notes: '',
+    eligibility: '',
+    dependencies: [],
+    initialTasks: [],
+    ...initialAirdrop
   });
 
-  const [notifyTaskDueDate, setNotifyTaskDueDate] = useState<boolean>(getInitialNotificationToggleState('taskDueDate', initialData));
-  const [notifyStatusChange, setNotifyStatusChange] = useState<boolean>(getInitialNotificationToggleState('statusChange', initialData));
+  const [errors, setErrors] = useState<AirdropFormErrors>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [newTag, setNewTag] = useState('');
+  const [newDependency, setNewDependency] = useState('');
 
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
-  const [isSubmitting, setIsSubmitting] = useState(false); // Added for loading state
-  const [newCustomFieldKey, setNewCustomFieldKey] = useState('');
-  const [newCustomFieldValue, setNewCustomFieldValue] = useState('');
-
-  const blockchainOptions = BLOCKCHAIN_OPTIONS.map((b) => ({ value: b, label: b }));
-
+  // Reset form when modal opens/closes
   useEffect(() => {
-    if (initialData) {
-      const { tasks, transactions, claimedTokens, sybilChecklist, roadmapEvents, dateAdded, ...editableData } = initialData;
+    if (isOpen) {
       setFormData({
-        ...editableData,
-        potential: initialData.potential || AIRDROP_POTENTIAL_OPTIONS[0],
-        officialLinks: { ...(initialData.officialLinks || {}) },
-        tags: initialData.tags || [],
-        priority: initialData.priority || AirdropPriority.MEDIUM,
-        timeSpentHours: initialData.timeSpentHours || 0,
-        isArchived: initialData.isArchived || false,
-        dependentOnAirdropIds: initialData.dependentOnAirdropIds || [],
-        leadsToAirdropIds: initialData.leadsToAirdropIds || [],
-        logoBase64: initialData.logoBase64 || undefined,
-        customFields: initialData.customFields || [],
-        notificationOverrides: initialData.notificationOverrides ? { ...initialData.notificationOverrides } : undefined,
-        projectCategory: initialData.projectCategory || undefined,
+        projectName: '',
+        blockchain: '',
+        myStatus: 'Not Started',
+        potential: 'Unknown',
+        description: '',
+        website: '',
+        twitter: '',
+        discord: '',
+        telegram: '',
+        tags: [],
+        notes: '',
+        eligibility: '',
+        dependencies: [],
+        initialTasks: [],
+        ...initialAirdrop
       });
-      setNotifyTaskDueDate(getInitialNotificationToggleState('taskDueDate', initialData));
-      setNotifyStatusChange(getInitialNotificationToggleState('statusChange', initialData));
-      setSelectedTemplateId('');
-    } else {
-        setFormData({
-            projectName: '', blockchain: BLOCKCHAIN_OPTIONS[0], status: AirdropStatus.RUMORED,
-            potential: AIRDROP_POTENTIAL_OPTIONS[0], myStatus: AirdropStatus.NOT_STARTED,
-            priority: AirdropPriority.MEDIUM, description: '',
-            officialLinks: { website: '', twitter: '', discord: '' },
-            eligibilityCriteria: '', notes: '', tags: [], timeSpentHours: 0, isArchived: false,
-            dependentOnAirdropIds: [], leadsToAirdropIds: [], logoBase64: undefined, customFields: [],
-            notificationOverrides: undefined, 
-            projectCategory: undefined,
-        });
-        setNotifyTaskDueDate(appData.settings.defaultAirdropNotificationSettings.taskDueDate);
-        setNotifyStatusChange(appData.settings.defaultAirdropNotificationSettings.statusChange);
-        setSelectedTemplateId('');
+      setErrors({});
+      setShowAdvanced(false);
+      setNewTag('');
+      setNewDependency('');
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialData, appData.settings.defaultAirdropNotificationSettings]);
+  }, [isOpen, initialAirdrop]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    const { name, value, type } = e.target;
-    if (name === 'timeSpentHours' && type === 'number') {
-        setFormData(prev => ({...prev, [name]: value === '' ? 0 : parseFloat(value) }));
-    } else if (type === 'number') {
-        setFormData(prev => ({...prev, [name]: parseFloat(value) || 0 }));
-    } else {
-        setFormData(prev => ({ ...prev, [name]: value }));
+  // Inline validation
+  const validateField = (field: keyof AirdropFormData, value: string) => {
+    switch (field) {
+      case 'projectName':
+        if (!value.trim()) return 'Project name is required';
+        if (value.trim().length < 2) return 'Project name must be at least 2 characters';
+        break;
+      case 'blockchain':
+        if (!value.trim()) return 'Blockchain is required';
+        break;
+      case 'website':
+        if (value && !isValidUrl(value)) {
+          return 'Please enter a valid URL';
+        }
+        break;
+      case 'twitter':
+        if (value && !value.startsWith('@') && !value.startsWith('http')) {
+          return 'Please enter a valid Twitter handle (@username) or URL';
+        }
+        break;
+      case 'discord':
+        if (value && !value.startsWith('http')) {
+          return 'Please enter a valid Discord invite URL';
+        }
+        break;
+      case 'telegram':
+        if (value && !value.startsWith('@') && !value.startsWith('http')) {
+          return 'Please enter a valid Telegram handle (@username) or URL';
+        }
+        break;
+    }
+    return '';
+  };
+
+  const isValidUrl = (string: string) => {
+    try {
+      new URL(string);
+      return true;
+    } catch (_) {
+      return false;
     }
   };
 
-  const handleLinkChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
+  const handleFieldChange = (field: keyof AirdropFormData, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+    
+    // Clear error when user starts typing
+    if (errors[field as keyof AirdropFormErrors]) {
+      setErrors(prev => ({ ...prev, [field]: undefined }));
+    }
+    
+    // Validate field
+    const error = validateField(field, value);
+    if (error) {
+      setErrors(prev => ({ ...prev, [field]: error }));
+    }
+  };
+
+  const addTag = () => {
+    if (newTag.trim() && !formData.tags.includes(newTag.trim())) {
+      setFormData(prev => ({
+        ...prev,
+        tags: [...prev.tags, newTag.trim()]
+      }));
+      setNewTag('');
+    }
+  };
+
+  const removeTag = (tag: string) => {
     setFormData(prev => ({
       ...prev,
-      officialLinks: {
-        ...(prev.officialLinks || {}),
-        [name]: value,
-      },
+      tags: prev.tags.filter(t => t !== tag)
     }));
   };
 
-  const handleTagsChange = (newTags: string[]) => {
-    setFormData(prev => ({ ...prev, tags: newTags }));
-  };
-
-  const handleMultiSelectChange = (name: 'dependentOnAirdropIds' | 'leadsToAirdropIds', selectedOptions: HTMLSelectElement['selectedOptions']) => {
-    const values = Array.from(selectedOptions).map(option => option.value);
-    setFormData(prev => ({ ...prev, [name]: values }));
-  };
-
-  const handleTemplateChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const templateId = e.target.value;
-    setSelectedTemplateId(templateId);
-    if (templateId) {
-        const template = appData.airdropTemplates?.find(t => t.id === templateId);
-        if (template) {
-            setFormData(prev => ({
-                ...prev,
-                description: template.description || prev.description,
-                blockchain: template.blockchain || prev.blockchain,
-            }));
-             addToast(`Template "${template.name}" applied. Tasks will be added on save.`, 'info');
-        }
+  const addDependency = () => {
+    if (newDependency.trim() && !formData.dependencies.includes(newDependency.trim())) {
+      setFormData(prev => ({
+        ...prev,
+        dependencies: [...prev.dependencies, newDependency.trim()]
+      }));
+      setNewDependency('');
     }
   };
-  
-  const handleNotificationToggleChange = (key: keyof AirdropNotificationSettings, value: boolean) => {
-    if (key === 'taskDueDate') setNotifyTaskDueDate(value);
-    if (key === 'statusChange') setNotifyStatusChange(value);
 
-    setFormData(prev => {
-        const currentOverrides = { ...(prev.notificationOverrides || {}) };
-        const globalDefault = appData.settings.defaultAirdropNotificationSettings[key];
-        
-        if (value === globalDefault) {
-            delete currentOverrides[key];
-        } else {
-            currentOverrides[key] = value;
-        }
-        
-        const finalOverrides = Object.keys(currentOverrides).length > 0 ? currentOverrides : undefined;
-        return { ...prev, notificationOverrides: finalOverrides };
-    });
+  const removeDependency = (dependency: string) => {
+    setFormData(prev => ({
+      ...prev,
+      dependencies: prev.dependencies.filter(d => d !== dependency)
+    }));
   };
 
-
-  const validate = (): boolean => { 
-    const newErrors: Record<string, string> = {};
-    if (!formData.projectName?.trim()) newErrors.projectName = 'Project name is required.';
-    if (!formData.blockchain?.trim()) newErrors.blockchain = 'Blockchain is required.';
-    if (formData.timeSpentHours !== undefined && formData.timeSpentHours < 0) newErrors.timeSpentHours = 'Time spent cannot be negative.';
+  const validateForm = (): boolean => {
+    const newErrors: AirdropFormErrors = {};
+    
+    // Validate required fields
+    const projectNameError = validateField('projectName', formData.projectName);
+    if (projectNameError) newErrors.projectName = projectNameError;
+    
+    const blockchainError = validateField('blockchain', formData.blockchain);
+    if (blockchainError) newErrors.blockchain = blockchainError;
+    
+    // Validate optional fields if they have values
+    if (formData.website) {
+      const websiteError = validateField('website', formData.website);
+      if (websiteError) newErrors.website = websiteError;
+    }
+    
+    if (formData.twitter) {
+      const twitterError = validateField('twitter', formData.twitter);
+      if (twitterError) newErrors.twitter = twitterError;
+    }
+    
+    if (formData.discord) {
+      const discordError = validateField('discord', formData.discord);
+      if (discordError) newErrors.discord = discordError;
+    }
+    
+    if (formData.telegram) {
+      const telegramError = validateField('telegram', formData.telegram);
+      if (telegramError) newErrors.telegram = telegramError;
+    }
+    
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validate()) return;
+    
+    if (!validateForm()) {
+      addToast('Please fix the errors in the form', 'error');
+      return;
+    }
     
     setIsSubmitting(true);
     try {
-        const finalNotificationOverrides: Partial<AirdropNotificationSettings> = {};
-        let overridesNeeded = false;
-
-        if (notifyTaskDueDate !== appData.settings.defaultAirdropNotificationSettings.taskDueDate) {
-            finalNotificationOverrides.taskDueDate = notifyTaskDueDate;
-            overridesNeeded = true;
-        }
-        if (notifyStatusChange !== appData.settings.defaultAirdropNotificationSettings.statusChange) {
-            finalNotificationOverrides.statusChange = notifyStatusChange;
-            overridesNeeded = true;
-        }
-        
-        const { dateAdded, ...submissionDataNoDate } = formData; 
-        const submissionData = {
-            projectName: submissionDataNoDate.projectName || '',
-            blockchain: submissionDataNoDate.blockchain || BLOCKCHAIN_OPTIONS[0],
-            status: submissionDataNoDate.status || AirdropStatus.RUMORED,
-            potential: submissionDataNoDate.potential || AIRDROP_POTENTIAL_OPTIONS[0],
-            myStatus: submissionDataNoDate.myStatus || AirdropStatus.NOT_STARTED,
-            priority: submissionDataNoDate.priority || AirdropPriority.MEDIUM,
-            description: submissionDataNoDate.description || '',
-            officialLinks: submissionDataNoDate.officialLinks || { website: '', twitter: '', discord: '' },
-            eligibilityCriteria: submissionDataNoDate.eligibilityCriteria || '',
-            notes: submissionDataNoDate.notes || '',
-            tags: submissionDataNoDate.tags || [],
-            timeSpentHours: submissionDataNoDate.timeSpentHours || 0,
-            isArchived: submissionDataNoDate.isArchived || false,
-            dependentOnAirdropIds: submissionDataNoDate.dependentOnAirdropIds || [],
-            leadsToAirdropIds: submissionDataNoDate.leadsToAirdropIds || [],
-            logoBase64: submissionDataNoDate.logoBase64 || undefined,
-            customFields: (submissionDataNoDate.customFields || []).filter(f => f.key.trim()),
-            notificationOverrides: overridesNeeded ? finalNotificationOverrides : undefined,
-            projectCategory: submissionDataNoDate.projectCategory || undefined,
-        };
-
-        let finalDataWithTasks: any = submissionData;
-
-        if (!initialData?.id && selectedTemplateId) {
-            const template = appData.airdropTemplates?.find(t => t.id === selectedTemplateId);
-            if (template && template.tasks) {
-            finalDataWithTasks.tasks = template.tasks.map(taskTemplate => ({
-                id: crypto.randomUUID(),
-                description: taskTemplate.description,
-                completed: false,
-                associatedWalletId: (taskTemplate as any).associatedWalletId,
-                dueDate: (taskTemplate as any).dueDate,
-                timeSpentMinutes: 0,
-                notes: '',
-                cost: '',
-                linkedGasLogId: undefined,
-                subTasks: [],
-            }));
-            }
-        } else if (initialData?.id) {
-            finalDataWithTasks = { ...initialData, ...submissionData }; 
-        }
-
-        await onSubmit(finalDataWithTasks as Airdrop); 
-        onClose(); // Toast is handled by AppContext on successful API call
+      await onSubmit(formData);
+      addToast(`Airdrop ${mode === 'create' ? 'created' : 'updated'} successfully!`, 'success');
+      onClose();
     } catch (error) {
-        addToast(`Error submitting airdrop: ${(error as Error).message}`, "error");
+      addToast(`Failed to ${mode === 'create' ? 'create' : 'update'} airdrop`, 'error');
     } finally {
-        setIsSubmitting(false);
+      setIsSubmitting(false);
     }
   };
 
-  const airdropOptionsForDependencies = appData.airdrops
-    .filter(a => a.id !== initialData?.id)
-    .map(a => ({ value: a.id, label: a.projectName }));
+  const handleKeyPress = (e: React.KeyboardEvent, action: () => void) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      action();
+    }
+  };
 
-  const airdropTemplateOptions = [
-    { value: '', label: 'None (Start Fresh)' },
-    ...(appData.airdropTemplates || []).map(t => ({ value: t.id, label: t.name })),
-  ];
-
-  const projectCategoryOptions = AIRDROP_PROJECT_CATEGORIES.map((c) => ({ value: c, label: c }));
+  const blockchains = ['Ethereum', 'Polygon', 'Arbitrum', 'Optimism', 'Base', 'BSC', 'Solana', 'Avalanche', 'Other'];
+  const statuses = ['Not Started', 'In Progress', 'Completed', 'Failed', 'On Hold'];
+  const potentials = ['Unknown', 'Low', 'Medium', 'High', 'Very High'];
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
-      <Input
-        id="projectName"
-        name="projectName"
-        label="Project Name"
-        value={formData.projectName || ''}
-        onChange={handleChange}
-        error={!!errors.projectName}
-        required
-        disabled={isSubmitting}
-      />
-      {!initialData?.id && (
-        <Select id="airdropTemplate" name="airdropTemplate" label="Airdrop Template (Optional)" value={selectedTemplateId} onChange={handleTemplateChange} options={airdropTemplateOptions} disabled={isSubmitting}/>
-      )}
-      <Select
-        id="blockchain"
-        name="blockchain"
-        label="Blockchain"
-        value={formData.blockchain || ''}
-        onChange={handleChange}
-        options={blockchainOptions}
-        error={!!errors.blockchain}
-        required
-        disabled={isSubmitting}
-      />
-      <Select id="projectCategory" name="projectCategory" label="Project Category (Optional)" value={formData.projectCategory || ''} onChange={handleChange} options={projectCategoryOptions} disabled={isSubmitting}/>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Select
-          id="status"
-          name="status"
-          label="Status"
-          value={formData.status}
-          onChange={handleChange}
-          options={AIRDROP_STATUS_OPTIONS.map(s => ({ value: s, label: s }))}
-          disabled={isSubmitting}
-        />
-        <Select id="potential" name="potential" label="Potential" value={formData.potential || AIRDROP_POTENTIAL_OPTIONS[0]} onChange={handleChange} options={AIRDROP_POTENTIAL_OPTIONS.map(p => ({ value: p, label: p }))} disabled={isSubmitting}/>
-        <Select id="priority" name="priority" label="Priority" value={formData.priority || AirdropPriority.MEDIUM} onChange={handleChange} options={AIRDROP_PRIORITY_OPTIONS.map(p => ({value:p, label:p}))} disabled={isSubmitting}/>
-      </div>
-
-      <div>
-        <Select id="myStatus" name="myStatus" label="My Status" value={formData.myStatus || AirdropStatus.NOT_STARTED} onChange={handleChange} options={AIRDROP_STATUS_OPTIONS.map(s => ({ value: s, label: s }))} disabled={isSubmitting}/>
-        <p className="text-xs text-text-secondary mt-1">Your progress with this airdrop.</p>
-      </div>
-
-      <TagInput id="tags" label="Tags (Optional)" tags={formData.tags || []} onTagsChange={handleTagsChange} disabled={isSubmitting}/>
-      
-      <Input id="timeSpentHours" name="timeSpentHours" label="Overall Estimated Hours Spent (Manual Entry - Optional)" type="number" value={formData.timeSpentHours === undefined ? '' : formData.timeSpentHours.toString()} onChange={handleChange} error={!!errors.timeSpentHours} min="0" step="0.1" disabled={isSubmitting}/>
-      <p className="text-xs text-text-secondary -mt-3 mb-2">Note: Task-specific time is logged separately.</p>
-      
-      <div className="space-y-2">
-        <label htmlFor="dependentOnAirdropIds" className="block text-sm font-medium text-text-secondary">Depends On (Prerequisites - Optional)</label>
-        <select
-          id="dependentOnAirdropIds"
-          name="dependentOnAirdropIds"
-          multiple
-          value={formData.dependentOnAirdropIds || []}
-          onChange={(e) => handleMultiSelectChange('dependentOnAirdropIds', e.target.selectedOptions)}
-          className="block w-full h-24 px-3 py-2 border border-border rounded-md shadow-sm focus:outline-none focus:ring-accent focus:border-accent sm:text-sm bg-surface-secondary text-text-primary"
-          disabled={isSubmitting}
-        >
-          {airdropOptionsForDependencies.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-        </select>
-      </div>
-      <div className="space-y-2">
-        <label htmlFor="leadsToAirdropIds" className="block text-sm font-medium text-text-secondary">Leads To (Unlocks - Optional)</label>
-        <select
-          id="leadsToAirdropIds"
-          name="leadsToAirdropIds"
-          multiple
-          value={formData.leadsToAirdropIds || []}
-          onChange={(e) => handleMultiSelectChange('leadsToAirdropIds', e.target.selectedOptions)}
-          className="block w-full h-24 px-3 py-2 border border-border rounded-md shadow-sm focus:outline-none focus:ring-accent focus:border-accent sm:text-sm bg-surface-secondary text-text-primary"
-          disabled={isSubmitting}
-        >
-          {airdropOptionsForDependencies.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-        </select>
-      </div>
-
-      <div className="relative">
-        <Textarea
-          id="description"
-          name="description"
-          label="Description"
-          value={formData.description || ''}
-          onChange={handleChange}
-          error={!!errors.description}
-          rows={2}
-          disabled={isSubmitting}
-        />
-      </div>
-
-      <fieldset className="border border-border p-4 rounded-md" disabled={isSubmitting}>
-        <legend className="text-sm font-medium px-1">Official Links (Optional)</legend>
-        <div className="space-y-3">
-          <Input id="website" name="website" label="Website URL" value={formData.officialLinks?.website || ''} onChange={handleLinkChange} type="url" placeholder="https://..." disabled={isSubmitting}/>
-          <Input id="twitter" name="twitter" label="Twitter URL" value={formData.officialLinks?.twitter || ''} onChange={handleLinkChange} type="url" placeholder="https://twitter.com/..." disabled={isSubmitting}/>
-          <Input id="discord" name="discord" label="Discord Invite URL" value={formData.officialLinks?.discord || ''} onChange={handleLinkChange} type="url" placeholder="https://discord.gg/..." disabled={isSubmitting}/>
-        </div>
-      </fieldset>
-
-      <Textarea id="eligibilityCriteria" name="eligibilityCriteria" label="Eligibility Criteria (If known)" value={formData.eligibilityCriteria || ''} onChange={handleChange} rows={3} placeholder="e.g., Interacted before snapshot date, specific volume, testnet user..." disabled={isSubmitting}/>
-      <Textarea id="notes" name="notes" label="Personal Notes" value={formData.notes || ''} onChange={handleChange} rows={3} placeholder="Any other relevant info, reminders, strategies..." disabled={isSubmitting}/>
-
-      <fieldset className="border border-border p-4 rounded-md" disabled={isSubmitting}>
-        <legend className="text-sm font-medium px-1 text-text-secondary flex items-center"><Bell size={14} className="mr-1.5 text-warning"/> Notification Overrides</legend>
-        {!appData.settings.notificationsEnabled && (
-            <div className="p-2 bg-warning/10 rounded-md text-xs text-warning flex items-center gap-2 my-2">
-                <Info size={16}/> Global notifications are currently disabled in settings. These overrides will apply if global notifications are re-enabled.
-            </div>
-        )}
-        <div className="space-y-3 mt-2">
-            <div className="flex items-center justify-between">
-                <ToggleSwitch
-                    id={`notify-task-due-${initialData?.id || 'new'}`}
-                    label="Task Due Dates"
-                    checked={notifyTaskDueDate}
-                    onChange={(checked) => handleNotificationToggleChange('taskDueDate', checked)}
-                    srLabel="Toggle task due date notifications for this airdrop"
-                    disabled={isSubmitting}
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={`${mode === 'create' ? 'Create' : 'Edit'} Airdrop`}
+      size="xl"
+    >
+      <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Basic Info Section */}
+        <Card variant="default" padding="md">
+          <CardHeader>
+            <h3 className="text-lg font-semibold flex items-center gap-2">
+              <Target className="h-5 w-5 text-blue-600" />
+              Basic Information
+            </h3>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Project Name *
+                </label>
+                <Input
+                  value={formData.projectName}
+                  onChange={(e) => handleFieldChange('projectName', e.target.value)}
+                  placeholder="Enter project name..."
+                  className={errors.projectName ? 'border-red-500' : ''}
                 />
-                <span className="text-xs text-text-secondary ml-2">
-                    (Global default: {appData.settings.defaultAirdropNotificationSettings.taskDueDate ? "On" : "Off"})
-                </span>
-            </div>
-            <div className="flex items-center justify-between">
-                <ToggleSwitch
-                    id={`notify-status-change-${initialData?.id || 'new'}`}
-                    label="Airdrop Status Changes"
-                    checked={notifyStatusChange}
-                    onChange={(checked) => handleNotificationToggleChange('statusChange', checked)}
-                    srLabel="Toggle airdrop status change notifications for this airdrop"
-                    disabled={isSubmitting}
+                {errors.projectName && (
+                  <div className="flex items-center mt-1 text-sm text-red-600">
+                    <AlertCircle className="h-4 w-4 mr-1" />
+                    {errors.projectName}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Blockchain *
+                </label>
+                <Select
+                  value={formData.blockchain}
+                  onValueChange={(value) => handleFieldChange('blockchain', value)}
+                  options={[
+                    { value: '', label: 'Select blockchain' },
+                    ...blockchains.map(bc => ({ value: bc, label: bc }))
+                  ]}
                 />
-                 <span className="text-xs text-text-secondary ml-2">
-                    (Global default: {appData.settings.defaultAirdropNotificationSettings.statusChange ? "On" : "Off"})
-                </span>
+                {errors.blockchain && (
+                  <div className="flex items-center mt-1 text-sm text-red-600">
+                    <AlertCircle className="h-4 w-4 mr-1" />
+                    {errors.blockchain}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Status
+                </label>
+                <Select
+                  value={formData.myStatus}
+                  onValueChange={(value) => handleFieldChange('myStatus', value)}
+                  options={statuses.map(status => ({ value: status, label: status }))}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Potential Value
+                </label>
+                <Select
+                  value={formData.potential}
+                  onValueChange={(value) => handleFieldChange('potential', value)}
+                  options={potentials.map(potential => ({ value: potential, label: potential }))}
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Description
+                </label>
+                <Textarea
+                  value={formData.description}
+                  onChange={(e) => handleFieldChange('description', e.target.value)}
+                  placeholder="Describe the airdrop project..."
+                  rows={3}
+                />
+              </div>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Official Links Section */}
+        <Card variant="default" padding="md">
+          <CardHeader>
+            <h3 className="text-lg font-semibold flex items-center gap-2">
+              <Globe className="h-5 w-5 text-green-600" />
+              Official Links
+            </h3>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Website
+                </label>
+                <div className="relative">
+                  <Input
+                    type="url"
+                    value={formData.website}
+                    onChange={(e) => handleFieldChange('website', e.target.value)}
+                    placeholder="https://project.com"
+                    className={errors.website ? 'border-red-500' : ''}
+                  />
+                  <Link className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                </div>
+                <div className="flex items-center mt-1 text-xs text-gray-500">
+                  <Info className="h-3 w-3 mr-1" />
+                  Official project website
+                </div>
+                {errors.website && (
+                  <div className="flex items-center mt-1 text-sm text-red-600">
+                    <AlertCircle className="h-4 w-4 mr-1" />
+                    {errors.website}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Twitter
+                </label>
+                <div className="relative">
+                  <Input
+                    value={formData.twitter}
+                    onChange={(e) => handleFieldChange('twitter', e.target.value)}
+                    placeholder="@username or URL"
+                    className={errors.twitter ? 'border-red-500' : ''}
+                  />
+                  <Twitter className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                </div>
+                <div className="flex items-center mt-1 text-xs text-gray-500">
+                  <Info className="h-3 w-3 mr-1" />
+                  Twitter handle or profile URL
+                </div>
+                {errors.twitter && (
+                  <div className="flex items-center mt-1 text-sm text-red-600">
+                    <AlertCircle className="h-4 w-4 mr-1" />
+                    {errors.twitter}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Discord
+                </label>
+                <div className="relative">
+                  <Input
+                    type="url"
+                    value={formData.discord}
+                    onChange={(e) => handleFieldChange('discord', e.target.value)}
+                    placeholder="https://discord.gg/invite"
+                    className={errors.discord ? 'border-red-500' : ''}
+                  />
+                  <MessageCircle className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                </div>
+                <div className="flex items-center mt-1 text-xs text-gray-500">
+                  <Info className="h-3 w-3 mr-1" />
+                  Discord server invite URL
+                </div>
+                {errors.discord && (
+                  <div className="flex items-center mt-1 text-sm text-red-600">
+                    <AlertCircle className="h-4 w-4 mr-1" />
+                    {errors.discord}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Telegram
+                </label>
+                <div className="relative">
+                  <Input
+                    value={formData.telegram}
+                    onChange={(e) => handleFieldChange('telegram', e.target.value)}
+                    placeholder="@username or URL"
+                    className={errors.telegram ? 'border-red-500' : ''}
+                  />
+                  <MessageCircle className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                </div>
+                <div className="flex items-center mt-1 text-xs text-gray-500">
+                  <Info className="h-3 w-3 mr-1" />
+                  Telegram handle or channel URL
+                </div>
+                {errors.telegram && (
+                  <div className="flex items-center mt-1 text-sm text-red-600">
+                    <AlertCircle className="h-4 w-4 mr-1" />
+                    {errors.telegram}
+                  </div>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Advanced Section */}
+        <Card variant="default" padding="md">
+          <CardHeader>
+            <button
+              type="button"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              className="flex items-center justify-between w-full text-left"
+            >
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <Settings className="h-5 w-5 text-purple-600" />
+                Advanced Settings
+              </h3>
+              {showAdvanced ? (
+                <ChevronDown className="h-5 w-5 text-gray-400" />
+              ) : (
+                <ChevronRight className="h-5 w-5 text-gray-400" />
+              )}
+            </button>
+          </CardHeader>
+          {showAdvanced && (
+            <CardContent className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Eligibility Requirements
+                </label>
+                <Textarea
+                  value={formData.eligibility}
+                  onChange={(e) => handleFieldChange('eligibility', e.target.value)}
+                  placeholder="Describe eligibility requirements..."
+                  rows={2}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Tags
+                </label>
+                <div className="flex gap-2 mb-3">
+                  <Input
+                    value={newTag}
+                    onChange={(e) => setNewTag(e.target.value)}
+                    onKeyPress={(e) => handleKeyPress(e, addTag)}
+                    placeholder="Add a tag..."
+                    className="flex-1"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={addTag}
+                    disabled={!newTag.trim()}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+                {formData.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {formData.tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-sm rounded-full"
+                      >
+                        <Tag className="h-3 w-3" />
+                        {tag}
+                        <button
+                          type="button"
+                          onClick={() => removeTag(tag)}
+                          className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Dependencies
+                </label>
+                <div className="flex gap-2 mb-3">
+                  <Input
+                    value={newDependency}
+                    onChange={(e) => setNewDependency(e.target.value)}
+                    onKeyPress={(e) => handleKeyPress(e, addDependency)}
+                    placeholder="Add a dependency..."
+                    className="flex-1"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={addDependency}
+                    disabled={!newDependency.trim()}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+                {formData.dependencies.length > 0 && (
+                  <div className="space-y-2">
+                    {formData.dependencies.map((dependency) => (
+                      <div
+                        key={dependency}
+                        className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-800 rounded-lg"
+                      >
+                        <span className="flex-1 text-sm">{dependency}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeDependency(dependency)}
+                          className="text-gray-400 hover:text-red-500"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Notes
+                </label>
+                <Textarea
+                  value={formData.notes}
+                  onChange={(e) => handleFieldChange('notes', e.target.value)}
+                  placeholder="Additional notes or context..."
+                  rows={3}
+                />
+              </div>
+            </CardContent>
+          )}
+        </Card>
+
+        {/* Initial Tasks Section */}
+        <Card variant="default" padding="md">
+          <CardHeader>
+            <h3 className="text-lg font-semibold flex items-center gap-2">
+              <CheckSquare className="h-5 w-5 text-orange-600" />
+              Initial Tasks (Optional)
+            </h3>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <SubtaskChecklist
+              subtasks={formData.initialTasks}
+              onChange={(initialTasks) => setFormData(prev => ({ ...prev, initialTasks }))}
+              placeholder="Add an initial task..."
+            />
+
+            {formData.initialTasks.length === 0 && (
+              <div className="text-center py-4 text-gray-500 text-sm">
+                No initial tasks added. You can add tasks later or create them now.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Actions */}
+        <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onClose}
+            disabled={isSubmitting}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={isSubmitting || !formData.projectName.trim() || !formData.blockchain}
+          >
+            {isSubmitting ? (
+              <div className="flex items-center">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                Saving...
+              </div>
+            ) : (
+              `${mode === 'create' ? 'Create' : 'Update'} Airdrop`
+            )}
+          </Button>
         </div>
-        <p className="text-xs text-text-secondary mt-2">
-            Adjust these toggles to override the global notification settings for this specific airdrop. If a toggle's state matches the global default, no specific override is stored.
-        </p>
-      </fieldset>
-
-
-      <div className="flex justify-end space-x-3 pt-2 sticky bottom-0 bg-surface py-3">
-        <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting}>
-          {t('common_cancel')}
-        </Button>
-        <Button type="submit" loading={isSubmitting} disabled={isSubmitting}>{initialData ? t('common_save_changes_button', {defaultValue:'Save Changes'}) : t('add_new_airdrop_button')}</Button>
-      </div>
-    </form>
+      </form>
+    </Modal>
   );
 };

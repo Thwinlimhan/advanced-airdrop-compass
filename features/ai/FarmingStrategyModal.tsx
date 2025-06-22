@@ -1,16 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, FormEvent, useEffect } from 'react';
 import { Modal } from '../../design-system/components/Modal';
+import { Input } from '../../design-system/components/Input';
 import { Button } from '../../design-system/components/Button';
+import { Textarea } from '../../design-system/components/Textarea';
 import { Select } from '../../design-system/components/Select';
-import { TagInput } from '../../components/ui/TagInput';
 import { AlertMessage } from '../../components/ui/AlertMessage';
-import { UserFarmingPreferences, AiFarmingStrategy, AiFarmingStrategyStep, SavedAiFarmingStrategy } from '../../types';
-import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
-import { Brain, Loader2, Send, AlertTriangle, Save } from 'lucide-react';
+import { Brain, Send, Loader2, AlertTriangle, Save } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
+import { aiService } from '../../utils/aiService';
+import { UserFarmingPreferences, AiFarmingStrategy, AiFarmingStrategyStep, SavedAiFarmingStrategy } from '../../types';
+import { TagInput } from '../../components/ui/TagInput';
 import { BLOCKCHAIN_OPTIONS } from '../../constants';
 import { useTranslation } from '../../hooks/useTranslation';
-import { useAppContext } from '../../contexts/AppContext';
+import { useAiStrategyStore } from '../../stores/aiStrategyStore';
 
 interface FarmingStrategyModalProps {
   isOpen: boolean;
@@ -51,7 +53,7 @@ const StrategyStepDisplay: React.FC<{step: AiFarmingStrategyStep}> = ({step}) =>
 
 export const FarmingStrategyModal: React.FC<FarmingStrategyModalProps> = ({ isOpen, onClose, existingStrategy }) => {
   const { addToast } = useToast();
-  const { addSavedAiStrategy } = useAppContext();
+  const { addSavedAiStrategy } = useAiStrategyStore();
   const [preferences, setPreferences] = useState<UserFarmingPreferences>({
     riskTolerance: 'Medium',
     capital: '$100-$500',
@@ -69,7 +71,7 @@ export const FarmingStrategyModal: React.FC<FarmingStrategyModalProps> = ({ isOp
 
 
   useEffect(() => {
-    if (!process.env.API_KEY) {
+    if (!aiService.isAvailable()) {
       setIsApiKeyMissing(true);
     }
     if (isOpen) {
@@ -92,8 +94,8 @@ export const FarmingStrategyModal: React.FC<FarmingStrategyModalProps> = ({ isOp
         setIsViewingMode(false); // Set to creation mode
         setError(null);
       }
-      if (!process.env.API_KEY) {
-        setError("API_KEY for AI features is not configured. This feature is unavailable.");
+      if (!aiService.isAvailable()) {
+        setError(`AI Farming Strategist is unavailable because ${aiService.getProviderName()} is not configured.`);
       }
     }
   }, [isOpen, existingStrategy]);
@@ -106,7 +108,7 @@ export const FarmingStrategyModal: React.FC<FarmingStrategyModalProps> = ({ isOp
 
   const handleSubmit = async () => {
     if (isApiKeyMissing) {
-      setError("API_KEY for AI features is not configured. This feature is unavailable.");
+      setError(`AI Farming Strategist is unavailable because ${aiService.getProviderName()} is not configured.`);
       addToast("AI Strategy disabled: API Key missing.", "warning");
       return;
     }
@@ -116,7 +118,6 @@ export const FarmingStrategyModal: React.FC<FarmingStrategyModalProps> = ({ isOp
     setIsViewingMode(false);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
       const systemInstruction = `You are an expert crypto airdrop farming strategist. Based on the user's preferences (risk, capital, chains, time), generate a personalized, conceptual airdrop farming strategy.
       The strategy should include:
       1. 'strategyTitle': A catchy title for the strategy.
@@ -139,13 +140,10 @@ export const FarmingStrategyModal: React.FC<FarmingStrategyModalProps> = ({ isOp
 
       Generate a personalized farming strategy based on these preferences.`;
 
-      const response: GenerateContentResponse = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-preview-04-17',
-        contents: prompt,
-        config: { systemInstruction, responseMimeType: "application/json" }
-      });
-
-      let jsonStr = response.text?.trim() || '';
+      const fullPrompt = `${systemInstruction}\n\n${prompt}`;
+      let jsonStr = await aiService.generateContent(fullPrompt);
+      jsonStr = jsonStr.trim();
+      
       const fenceRegex = /^```(\w*)?\s*\n?(.*?)\n?\s*```$/s;
       const match = jsonStr.match(fenceRegex);
       if (match && match[2]) {

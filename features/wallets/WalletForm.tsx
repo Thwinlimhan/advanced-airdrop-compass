@@ -7,9 +7,10 @@ import { Textarea } from '../../design-system/components/Textarea';
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch';
 import { BLOCKCHAIN_OPTIONS, DEFAULT_TRANSACTION_CATEGORIES } from '../../constants';
 import { PlusCircle, Trash2, Coins, Zap, Activity as InteractionIcon, ImageUp as ImageIcon } from 'lucide-react';
-import { useAppContext } from '../../contexts/AppContext';
+import { useWalletStore } from '../../stores/walletStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { useToast } from '../../hooks/useToast';
-import { useTranslation } from '../../hooks/useTranslation'; // Added
+import { useTranslation } from '../../hooks/useTranslation';
 
 interface WalletFormProps {
   onSubmit: (wallet: Omit<Wallet, 'id' | 'balanceSnapshots' | 'gasLogs' | 'interactionLogs' | 'nftPortfolio' | 'isArchived' | 'transactionHistory'> | Wallet) => Promise<void>;
@@ -18,9 +19,10 @@ interface WalletFormProps {
 }
 
 export const WalletForm: React.FC<WalletFormProps> = ({ onSubmit, initialData, onClose }) => {
-  const { addGasLogToWallet, deleteGasLogFromWallet, addInteractionLogToWallet, deleteInteractionLogFromWallet, addNftToWalletPortfolio, updateNftInWalletPortfolio, deleteNftFromWalletPortfolio, appData } = useAppContext();
+  const { addGasLogToWallet, deleteGasLogFromWallet, addInteractionLogToWallet, deleteInteractionLogFromWallet, addNftToWalletPortfolio, updateNftInWalletPortfolio, deleteNftFromWalletPortfolio } = useWalletStore();
+  const { settings } = useSettingsStore();
   const { addToast } = useToast();
-  const { t } = useTranslation(); // Added
+  const { t } = useTranslation();
 
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
@@ -28,7 +30,7 @@ export const WalletForm: React.FC<WalletFormProps> = ({ onSubmit, initialData, o
   const [group, setGroup] = useState('');
   const [autoBalanceFetchEnabled, setAutoBalanceFetchEnabled] = useState(false);
   const [errors, setErrors] = useState<{ name?: string; address?: string }>({});
-  const [isSubmitting, setIsSubmitting] = useState(false); // Added for loading state
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [balanceSnapshots, setBalanceSnapshots] = useState<BalanceSnapshot[]>([]);
   const [newSnapshot, setNewSnapshot] = useState({ tokenSymbol: '', amount: '', date: new Date().toISOString().split('T')[0], notes: ''});
@@ -42,7 +44,7 @@ export const WalletForm: React.FC<WalletFormProps> = ({ onSubmit, initialData, o
   const [nftPortfolio, setNftPortfolio] = useState<NftLogEntry[]>([]);
   const [newNftEntry, setNewNftEntry] = useState({ name: '', collectionName: '', tokenId: '', contractAddress: '', imageUrl: '', purchaseDate: '', purchasePrice: '', estimatedFloorPrice: '', notes: '', purchaseLotId: '' });
   
-  const availableTransactionCategories = appData.settings.customTransactionCategories || DEFAULT_TRANSACTION_CATEGORIES;
+  const availableTransactionCategories = settings.customTransactionCategories || DEFAULT_TRANSACTION_CATEGORIES;
 
   useEffect(() => {
     if (initialData) {
@@ -95,7 +97,7 @@ export const WalletForm: React.FC<WalletFormProps> = ({ onSubmit, initialData, o
       } else {
         await onSubmit(walletData);
       }
-      onClose(); // onSubmit in context now handles toasts
+      onClose();
     } catch (error) {
         addToast(`Error submitting wallet: ${(error as Error).message}`, "error");
     } finally {
@@ -200,62 +202,63 @@ export const WalletForm: React.FC<WalletFormProps> = ({ onSubmit, initialData, o
           <Input id="newGasLogAmount" type="number" label="Amount" value={newGasLog.amount} onChange={e=>setNewGasLog({...newGasLog, amount:e.target.value})} placeholder="0.01" disabled={isSubmitting}/>
           <Input id="newGasLogCurrency" label="Currency" value={newGasLog.currency} onChange={e=>setNewGasLog({...newGasLog, currency:e.target.value})} placeholder="ETH" disabled={isSubmitting}/>
         </div>
-        <Input id="newGasLogDesc" label="Description (Optional)" value={newGasLog.description} onChange={e=>setNewGasLog({...newGasLog, description:e.target.value})} placeholder="Bridge gas" disabled={isSubmitting}/>
-        <Select id="newGasLogNetwork" label="Network" value={newGasLog.network || blockchain} onChange={e=>setNewGasLog({...newGasLog, network:e.target.value})} options={BLOCKCHAIN_OPTIONS.map(b=>({value:b, label:b}))} disabled={isSubmitting}/>
+        <Input id="newGasLogDescription" label="Description (Optional)" value={newGasLog.description} onChange={e=>setNewGasLog({...newGasLog, description:e.target.value})} placeholder="Swap transaction" disabled={isSubmitting}/>
         <Button type="button" size="sm" onClick={handleAddGasLog} className="mt-2" leftIcon={<PlusCircle size={14}/>} disabled={isSubmitting}>Add Gas Log</Button>
       </fieldset>
 
       <fieldset className="border border-border p-3 rounded-md" disabled={isSubmitting}>
         <legend className="text-sm font-medium px-1 text-text-secondary flex items-center"><InteractionIcon size={14} className="mr-1.5"/>Interaction Logs</legend>
-         <div className="space-y-2 max-h-40 overflow-y-auto mb-2 pr-1">
+        <div className="space-y-2 max-h-40 overflow-y-auto mb-2 pr-1">
           {interactionLogs.map(log => (
             <div key={log.id} className="text-xs p-1.5 bg-surface-secondary rounded flex justify-between items-center">
-              <span className="truncate" title={`${log.date}: ${log.type} - ${log.description}`}>
-                {log.date}: {log.type} - {log.description.substring(0,30)}{log.description.length > 30 ? '...' : ''} ({log.network}, Cost: {log.cost || 'N/A'})
-              </span>
+              <span>{log.date}: {log.type} - {log.description} {log.cost ? `(${log.cost})` : ''}</span>
               <Button type="button" variant="ghost" size="sm" onClick={() => handleRemoveInteractionLog(log.id)} className="p-0.5 text-red-500" disabled={isSubmitting}><Trash2 size={12}/></Button>
             </div>
           ))}
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <Input id="newInteractionDate" type="date" label="Date" value={newInteractionLog.date} onChange={e=>setNewInteractionLog({...newInteractionLog, date:e.target.value})} disabled={isSubmitting}/>
-            <Input id="newInteractionType" label="Type" value={newInteractionLog.type} onChange={e=>setNewInteractionLog({...newInteractionLog, type:e.target.value})} placeholder="Swap, Bridge, Mint" disabled={isSubmitting}/>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 items-end">
+          <Input id="newInteractionLogDate" type="date" label="Date" value={newInteractionLog.date} onChange={e=>setNewInteractionLog({...newInteractionLog, date:e.target.value})} disabled={isSubmitting}/>
+          <Input id="newInteractionLogType" label="Type" value={newInteractionLog.type} onChange={e=>setNewInteractionLog({...newInteractionLog, type:e.target.value})} placeholder="Swap, Bridge, etc." disabled={isSubmitting}/>
         </div>
-        <Textarea id="newInteractionDesc" label="Description" value={newInteractionLog.description} onChange={e=>setNewInteractionLog({...newInteractionLog, description:e.target.value})} placeholder="e.g., Swapped ETH for USDC on Uniswap" rows={2} disabled={isSubmitting}/>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
-            <Input id="newInteractionNetwork" label="Network" value={newInteractionLog.network || blockchain} onChange={e=>setNewInteractionLog({...newInteractionLog, network:e.target.value})} disabled={isSubmitting}/>
-            <Input id="newInteractionCost" label="Cost (Opt.)" value={newInteractionLog.cost} onChange={e=>setNewInteractionLog({...newInteractionLog, cost:e.target.value})} placeholder="e.g., 0.005 ETH" disabled={isSubmitting}/>
-            <Input id="newInteractionTxHash" label="Tx Hash (Opt.)" value={newInteractionLog.relatedTxHash} onChange={e=>setNewInteractionLog({...newInteractionLog, relatedTxHash:e.target.value})} placeholder="0x..." disabled={isSubmitting}/>
+        <Input id="newInteractionLogDescription" label="Description" value={newInteractionLog.description} onChange={e=>setNewInteractionLog({...newInteractionLog, description:e.target.value})} placeholder="Detailed description" disabled={isSubmitting}/>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 items-end">
+          <Input id="newInteractionLogCost" label="Cost (Optional)" value={newInteractionLog.cost} onChange={e=>setNewInteractionLog({...newInteractionLog, cost:e.target.value})} placeholder="0.01 ETH" disabled={isSubmitting}/>
+          <Select id="newInteractionLogCategory" label="Category" value={newInteractionLog.category} onChange={e=>setNewInteractionLog({...newInteractionLog, category:e.target.value})} options={availableTransactionCategories.map(cat => ({ value: cat, label: cat }))} disabled={isSubmitting}/>
         </div>
-        <Select id="newInteractionCategory" label="Category (Optional)" value={newInteractionLog.category} onChange={e=>setNewInteractionLog({...newInteractionLog, category: e.target.value})} options={[{value:'', label: 'Select...'}, ...availableTransactionCategories.map(c => ({value: c, label:c}))]} disabled={isSubmitting}/>
+        <Input id="newInteractionLogTxHash" label="Transaction Hash (Optional)" value={newInteractionLog.relatedTxHash} onChange={e=>setNewInteractionLog({...newInteractionLog, relatedTxHash:e.target.value})} placeholder="0x..." disabled={isSubmitting}/>
         <Button type="button" size="sm" onClick={handleAddInteractionLog} className="mt-2" leftIcon={<PlusCircle size={14}/>} disabled={isSubmitting}>Add Interaction Log</Button>
       </fieldset>
 
       <fieldset className="border border-border p-3 rounded-md" disabled={isSubmitting}>
         <legend className="text-sm font-medium px-1 text-text-secondary flex items-center"><ImageIcon size={14} className="mr-1.5"/>NFT Portfolio</legend>
         <div className="space-y-2 max-h-40 overflow-y-auto mb-2 pr-1">
-            {nftPortfolio.map(nft => (
-                <div key={nft.id} className="text-xs p-1.5 bg-surface-secondary rounded flex justify-between items-center">
-                    <span className="truncate" title={`${nft.name} (${nft.collectionName})`}>{nft.name} ({nft.collectionName}) - Floor: {nft.estimatedFloorPrice || 'N/A'}</span>
-                    <Button type="button" variant="ghost" size="sm" onClick={() => handleRemoveNftEntry(nft.id)} className="p-0.5 text-red-500" disabled={isSubmitting}><Trash2 size={12}/></Button>
-                </div>
-            ))}
+          {nftPortfolio.map(nft => (
+            <div key={nft.id} className="text-xs p-1.5 bg-surface-secondary rounded flex justify-between items-center">
+              <span>{nft.name} ({nft.collectionName}) {nft.purchasePrice ? `- ${nft.purchasePrice}` : ''}</span>
+              <Button type="button" variant="ghost" size="sm" onClick={() => handleRemoveNftEntry(nft.id)} className="p-0.5 text-red-500" disabled={isSubmitting}><Trash2 size={12}/></Button>
+            </div>
+          ))}
         </div>
-        <Input id="newNftName" label="NFT Name" value={newNftEntry.name} onChange={e=>setNewNftEntry({...newNftEntry, name:e.target.value})} disabled={isSubmitting}/>
-        <Input id="newNftCollection" label="Collection" value={newNftEntry.collectionName} onChange={e=>setNewNftEntry({...newNftEntry, collectionName:e.target.value})} disabled={isSubmitting}/>
-        <Input id="newNftContract" label="Contract Address" value={newNftEntry.contractAddress} onChange={e=>setNewNftEntry({...newNftEntry, contractAddress:e.target.value})} disabled={isSubmitting}/>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
-          <Input id="newNftPurchasePrice" label="Purchase Price (Opt.)" value={newNftEntry.purchasePrice} onChange={e=>setNewNftEntry({...newNftEntry, purchasePrice:e.target.value})} disabled={isSubmitting}/>
-          <Input id="newNftPurchaseDate" type="date" label="Purchase Date (Opt.)" value={newNftEntry.purchaseDate} onChange={e=>setNewNftEntry({...newNftEntry, purchaseDate:e.target.value})} disabled={isSubmitting}/>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 items-end">
+          <Input id="newNftName" label="NFT Name" value={newNftEntry.name} onChange={e=>setNewNftEntry({...newNftEntry, name:e.target.value})} placeholder="Bored Ape #123" disabled={isSubmitting}/>
+          <Input id="newNftCollection" label="Collection Name" value={newNftEntry.collectionName} onChange={e=>setNewNftEntry({...newNftEntry, collectionName:e.target.value})} placeholder="Bored Ape Yacht Club" disabled={isSubmitting}/>
         </div>
-        <Input id="newNftFloorPrice" label="Est. Floor Price (Opt.)" value={newNftEntry.estimatedFloorPrice} onChange={e=>setNewNftEntry({...newNftEntry, estimatedFloorPrice:e.target.value})} disabled={isSubmitting}/>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 items-end">
+          <Input id="newNftTokenId" label="Token ID (Optional)" value={newNftEntry.tokenId} onChange={e=>setNewNftEntry({...newNftEntry, tokenId:e.target.value})} placeholder="123" disabled={isSubmitting}/>
+          <Input id="newNftContract" label="Contract Address" value={newNftEntry.contractAddress} onChange={e=>setNewNftEntry({...newNftEntry, contractAddress:e.target.value})} placeholder="0x..." disabled={isSubmitting}/>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 items-end">
+          <Input id="newNftPurchaseDate" type="date" label="Purchase Date (Optional)" value={newNftEntry.purchaseDate} onChange={e=>setNewNftEntry({...newNftEntry, purchaseDate:e.target.value})} disabled={isSubmitting}/>
+          <Input id="newNftPurchasePrice" label="Purchase Price (Optional)" value={newNftEntry.purchasePrice} onChange={e=>setNewNftEntry({...newNftEntry, purchasePrice:e.target.value})} placeholder="10 ETH" disabled={isSubmitting}/>
+        </div>
+        <Input id="newNftImageUrl" label="Image URL (Optional)" value={newNftEntry.imageUrl} onChange={e=>setNewNftEntry({...newNftEntry, imageUrl:e.target.value})} placeholder="https://..." disabled={isSubmitting}/>
+        <Textarea id="newNftNotes" label="Notes (Optional)" value={newNftEntry.notes} onChange={e=>setNewNftEntry({...newNftEntry, notes:e.target.value})} placeholder="Additional notes..." rows={2} disabled={isSubmitting}/>
         <Button type="button" size="sm" onClick={handleAddNftEntry} className="mt-2" leftIcon={<PlusCircle size={14}/>} disabled={isSubmitting}>Add NFT</Button>
       </fieldset>
 
-
-      <div className="flex justify-end space-x-3 pt-2 sticky bottom-0 bg-surface py-3">
-        <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting}>{t('common_cancel')}</Button>
-        <Button type="submit" isLoading={isSubmitting} disabled={isSubmitting}>{initialData ? t('common_save_changes_button', {defaultValue: 'Save Changes'}) : t('add_new_wallet_button')}</Button>
+      <div className="flex justify-end space-x-2 pt-4 border-t border-border">
+        <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting}>Cancel</Button>
+        <Button type="submit" disabled={isSubmitting}>{initialData ? 'Update Wallet' : 'Create Wallet'}</Button>
       </div>
     </form>
   );

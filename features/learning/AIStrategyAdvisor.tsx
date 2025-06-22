@@ -1,12 +1,13 @@
-import React, { useState, useEffect } from 'react'; 
-import { GoogleGenAI, GenerateContentResponse } from "@google/genai"; 
+import React, { useState, FormEvent, useEffect } from 'react';
 import { Card } from '../../design-system/components/Card';
-import { Textarea } from '../../design-system/components/Textarea';
+import { Input } from '../../design-system/components/Input';
 import { Button } from '../../design-system/components/Button';
+import { Textarea } from '../../design-system/components/Textarea';
 import { AlertMessage } from '../../components/ui/AlertMessage';
-import { Brain, Send, Save, AlertTriangle } from 'lucide-react'; // Removed Loader2
+import { Brain, Send, Loader2, AlertTriangle, Save } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
-import { useAppContext } from '../../contexts/AppContext'; 
+import { aiService } from '../../utils/aiService';
+import { useAiStrategyStore } from '../../stores/aiStrategyStore'; 
 import { UserFarmingPreferences, AiFarmingStrategy, SavedAiFarmingStrategy, AiFarmingStrategyStep } from '../../types';
 
 export const AIStrategyAdvisor: React.FC = () => {
@@ -25,20 +26,30 @@ export const AIStrategyAdvisor: React.FC = () => {
   });
 
   const { addToast } = useToast();
-  const { addSavedAiStrategy } = useAppContext();
+  const { addSavedAiStrategy } = useAiStrategyStore();
   const [isApiKeyMissing, setIsApiKeyMissing] = useState(false);
 
   useEffect(() => {
-    if (!process.env.API_KEY) {
-      setIsApiKeyMissing(true);
-      setStrategyError("API_KEY for AI features is not configured. AI-powered advice is unavailable.");
-    }
+    const checkAIAvailability = async () => {
+      try {
+        const isAvailable = await aiService.isAvailable();
+        if (!isAvailable) {
+          setIsApiKeyMissing(true);
+          setStrategyError(`AI Strategy Advisor is unavailable because ${aiService.getProviderName()} is not configured or not available.`);
+        }
+      } catch (error) {
+        setIsApiKeyMissing(true);
+        setStrategyError(`AI Strategy Advisor is unavailable: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    };
+    
+    checkAIAvailability();
   }, []);
   
   const handleStrategySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isApiKeyMissing) {
-      setStrategyError("API_KEY for AI features is not configured. AI-powered advice is unavailable.");
+      setStrategyError(`AI Strategy Advisor is unavailable because ${aiService.getProviderName()} is not configured.`);
       addToast("AI Strategy disabled: API Key missing.", "warning");
       return;
     }
@@ -48,8 +59,6 @@ export const AIStrategyAdvisor: React.FC = () => {
     setStrategyError(null);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! }); 
-      
       const systemInstruction = `You are an expert crypto airdrop farming strategist. Based on the user's preferences (risk, capital, chains, time), generate a personalized, conceptual airdrop farming strategy.
       The strategy should include:
       1. 'strategyTitle': A catchy title for the strategy.
@@ -73,13 +82,10 @@ export const AIStrategyAdvisor: React.FC = () => {
 
       Generate a personalized farming strategy based on these preferences.`;
       
-      const response: GenerateContentResponse = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-preview-04-17', 
-        contents: prompt,
-        config: { systemInstruction, responseMimeType: "application/json" }
-      });
+      const fullPrompt = `${systemInstruction}\n\n${prompt}`;
+      let jsonStr = await aiService.generateContent(fullPrompt);
+      jsonStr = jsonStr.trim();
       
-      let jsonStr = response.text?.trim() || '';
       const fenceRegex = /^```(\w*)?\s*\n?(.*?)\n?\s*```$/s;
       const match = jsonStr.match(fenceRegex);
       if (match && match[2]) { jsonStr = match[2].trim(); }
@@ -136,7 +142,7 @@ export const AIStrategyAdvisor: React.FC = () => {
       <p className="text-sm text-muted-light dark:text-muted-dark mb-4">
         Describe your ideal airdrop or ask about strategies. The AI will provide conceptual advice.
       </p>
-      {isApiKeyMissing && <AlertMessage type="warning" title="API Key Missing" message="AI features require an API_KEY. This feature is currently disabled." className="mb-4" />}
+      {isApiKeyMissing && <AlertMessage type="warning" title="Feature Unavailable" message={`AI Strategy Advisor requires ${aiService.getProviderName()} to be properly configured and available. This feature is currently disabled.`} className="mb-4" />}
 
       <form onSubmit={handleStrategySubmit} className="space-y-4">
         {/* Preference inputs can be added here as in FarmingStrategyModal if desired */}

@@ -16,6 +16,7 @@ export * from './components/Textarea';
 export * from './components/Badge';
 export * from './components/Card';
 export * from './components/Modal';
+export * from './components/DraggableModal';
 export * from './components/Sidebar';
 export * from './components/Navbar';
 

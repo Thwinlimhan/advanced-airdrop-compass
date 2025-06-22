@@ -18,11 +18,11 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 }
 
 const sizeClasses = {
-  xs: 'px-2.5 py-1.5 text-xs',
-  sm: 'px-3 py-2 text-sm',
-  md: 'px-4 py-2.5 text-sm',
-  lg: 'px-5 py-3 text-base',
-  xl: 'px-6 py-3.5 text-lg'
+  xs: 'px-2 py-1 text-xs',
+  sm: 'px-3 py-1.5 text-sm',
+  md: 'px-4 py-2 text-sm',
+  lg: 'px-6 py-3 text-base',
+  xl: 'px-8 py-4 text-lg'
 };
 
 const iconSizes = {
@@ -35,71 +35,70 @@ const iconSizes = {
 
 const variantClasses = {
   primary: `
-    bg-primary text-white border-transparent
-    hover:bg-primary/90 hover:shadow-lg
+    bg-primary text-white border-primary
+    hover:bg-primary/90 hover:border-primary/90
     focus:ring-2 focus:ring-primary/50 focus:ring-offset-2
-    active:scale-95 active:bg-primary/95
-    disabled:bg-primary/50 disabled:cursor-not-allowed
+    active:scale-95
+    disabled:bg-gray-300 disabled:border-gray-300 disabled:cursor-not-allowed
   `,
   secondary: `
     bg-gray-100 text-gray-900 border-gray-200
-    dark:bg-gray-800 dark:text-gray-100 dark:border-gray-700
-    hover:bg-gray-200 hover:shadow-md
-    dark:hover:bg-gray-700
+    hover:bg-gray-200 hover:border-gray-300
     focus:ring-2 focus:ring-gray-500/50 focus:ring-offset-2
     active:scale-95
-    disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed
-    dark:disabled:bg-gray-800/50 dark:disabled:text-gray-600
+    disabled:bg-gray-50 disabled:border-gray-200 disabled:cursor-not-allowed
+    dark:bg-gray-800 dark:text-white dark:border-gray-700
+    dark:hover:bg-gray-700 dark:hover:border-gray-600
+    dark:disabled:bg-gray-900 dark:disabled:border-gray-800
   `,
   tertiary: `
-    bg-transparent text-gray-600 border-transparent
-    dark:text-gray-400
-    hover:bg-gray-100 hover:text-gray-900
-    dark:hover:bg-gray-800 dark:hover:text-gray-200
+    bg-transparent text-gray-700 border-gray-300
+    hover:bg-gray-50 hover:border-gray-400
     focus:ring-2 focus:ring-gray-500/50 focus:ring-offset-2
     active:scale-95
-    disabled:text-gray-400 disabled:cursor-not-allowed
-    dark:disabled:text-gray-600
+    disabled:bg-transparent disabled:border-gray-200 disabled:cursor-not-allowed
+    dark:text-gray-300 dark:border-gray-600
+    dark:hover:bg-gray-800 dark:hover:border-gray-500
+    dark:disabled:border-gray-700
   `,
   danger: `
-    bg-red-500 text-white border-transparent
-    hover:bg-red-600 hover:shadow-lg
+    bg-red-600 text-white border-red-600
+    hover:bg-red-700 hover:border-red-700
     focus:ring-2 focus:ring-red-500/50 focus:ring-offset-2
-    active:scale-95 active:bg-red-700
-    disabled:bg-red-300 disabled:cursor-not-allowed
+    active:scale-95
+    disabled:bg-red-300 disabled:border-red-300 disabled:cursor-not-allowed
   `,
   success: `
-    bg-green-500 text-white border-transparent
-    hover:bg-green-600 hover:shadow-lg
+    bg-green-600 text-white border-green-600
+    hover:bg-green-700 hover:border-green-700
     focus:ring-2 focus:ring-green-500/50 focus:ring-offset-2
-    active:scale-95 active:bg-green-700
-    disabled:bg-green-300 disabled:cursor-not-allowed
+    active:scale-95
+    disabled:bg-green-300 disabled:border-green-300 disabled:cursor-not-allowed
   `,
   warning: `
-    bg-yellow-500 text-white border-transparent
-    hover:bg-yellow-600 hover:shadow-lg
+    bg-yellow-600 text-white border-yellow-600
+    hover:bg-yellow-700 hover:border-yellow-700
     focus:ring-2 focus:ring-yellow-500/50 focus:ring-offset-2
-    active:scale-95 active:bg-yellow-700
-    disabled:bg-yellow-300 disabled:cursor-not-allowed
+    active:scale-95
+    disabled:bg-yellow-300 disabled:border-yellow-300 disabled:cursor-not-allowed
   `,
   ghost: `
     bg-transparent text-gray-700 border-transparent
-    dark:text-gray-300
     hover:bg-gray-100 hover:text-gray-900
-    dark:hover:bg-gray-800 dark:hover:text-gray-100
     focus:ring-2 focus:ring-gray-500/50 focus:ring-offset-2
     active:scale-95
-    disabled:text-gray-400 disabled:cursor-not-allowed
+    disabled:bg-transparent disabled:text-gray-400 disabled:cursor-not-allowed
+    dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white
     dark:disabled:text-gray-600
   `,
   outline: `
-    bg-transparent text-gray-700 border border-gray-300
-    dark:text-gray-300 dark:border-gray-600
+    bg-transparent text-gray-700 border-gray-300
     hover:bg-gray-50 hover:border-gray-400
-    dark:hover:bg-gray-800 dark:hover:border-gray-500
     focus:ring-2 focus:ring-gray-500/50 focus:ring-offset-2
     active:scale-95
-    disabled:text-gray-400 disabled:border-gray-200 disabled:cursor-not-allowed
+    disabled:bg-transparent disabled:text-gray-400 disabled:border-gray-200 disabled:cursor-not-allowed
+    dark:text-gray-300 dark:border-gray-600
+    dark:hover:bg-gray-800 dark:hover:border-gray-500
     dark:disabled:text-gray-600 dark:disabled:border-gray-700
   `,
   gradient: `
@@ -138,7 +137,16 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(({
   onClick,
   ...props
 }, ref) => {
-  const { config } = useTheme();
+  // Use theme context with fallback to prevent errors when used outside ThemeProvider
+  let themeConfig;
+  try {
+    const theme = useTheme();
+    themeConfig = theme.config;
+  } catch (error) {
+    // Fallback when theme context is not available
+    themeConfig = { reducedMotion: false };
+  }
+  
   const [isPressed, setIsPressed] = useState(false);
   
   const isDisabled = disabled || isLoading;
@@ -153,7 +161,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(({
     ${fullWidth ? 'w-full' : ''}
     ${shadow ? 'shadow-md hover:shadow-lg' : ''}
     ${glow ? 'hover:shadow-glow' : ''}
-    ${config.reducedMotion ? '' : 'transition-all duration-200'}
+    ${themeConfig.reducedMotion ? '' : 'transition-all duration-200'}
     ${sizeClasses[size]}
     ${variantClasses[variant]}
     ${animationClasses[animation]}
@@ -285,7 +293,6 @@ export const IconButton: React.FC<IconButtonProps> = ({
   const iconSize = iconSizes[size as keyof typeof iconSizes] || 16;
   let iconElement = icon;
   if (React.isValidElement(icon) && isLucideIconWithSize(icon)) {
-    // @ts-expect-error: Lucide icons accept 'size' prop, but type is not guaranteed
     iconElement = React.cloneElement(icon, { size: iconSize });
   }
   return (

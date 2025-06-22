@@ -1,4 +1,3 @@
-
 // Utility function to parse monetary values from strings
 export const parseMonetaryValue = (valueString: string | number | undefined): number => {
     if (valueString === undefined || valueString === null) return 0;
@@ -88,4 +87,22 @@ export const formatRelativeDate = (dateString?: string): string => {
   } else {
     return `Overdue by ${Math.abs(diffDays)} days (${targetDate.toLocaleDateString()})`;
   }
+};
+
+// Utility function to format dates
+export const formatDate = (dateString?: string | Date, options?: Intl.DateTimeFormatOptions): string => {
+  if (!dateString) return 'N/A';
+  
+  const date = typeof dateString === 'string' ? new Date(dateString) : dateString;
+  
+  if (isNaN(date.getTime())) return 'Invalid date';
+  
+  const defaultOptions: Intl.DateTimeFormatOptions = {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    ...options
+  };
+  
+  return date.toLocaleDateString('en-US', defaultOptions);
 };

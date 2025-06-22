@@ -2,13 +2,33 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const authMiddleware = require('../authMiddleware');
+const storage = require('../utils/storage');
 
 const router = express.Router();
 
-// In-memory store for demo purposes, replace with database in production
-const users = []; 
 // Conceptual token blacklist for demo. In production, use a more robust solution like Redis.
 let tokenBlacklist = new Set();
+
+// GET /api/v1/auth/users (Admin route for debugging - remove in production)
+router.get('/users', async (req, res) => {
+  try {
+    const users = await storage.getUsers();
+    // Don't return passwords in the response
+    const safeUsers = users.map(user => ({
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      createdAt: user.createdAt
+    }));
+    res.json({ 
+      count: safeUsers.length, 
+      users: safeUsers 
+    });
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({ message: 'Error fetching users.' });
+  }
+});
 
 // POST /api/v1/auth/register
 router.post('/register', async (req, res) => {
@@ -27,23 +47,25 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ message: 'Invalid email format.' });
   }
 
-
-  // Simulate DB check for existing user
-  if (users.find(user => user.email === email)) {
-    return res.status(409).json({ message: 'User already exists with this email.' }); // 409 Conflict
-  }
-
   try {
+    // Check for existing user
+    const existingUser = await storage.findUserByEmail(email);
+    if (existingUser) {
+      return res.status(409).json({ message: 'User already exists with this email.' }); // 409 Conflict
+    }
+
     const hashedPassword = await bcrypt.hash(password, 12); // Salt rounds: 12 is generally recommended
     const newUser = { 
       id: `user_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`, 
       email, 
       username: username || email.split('@')[0], // Default username from email prefix
-      password: hashedPassword 
+      password: hashedPassword,
+      createdAt: new Date().toISOString()
     };
-    users.push(newUser); 
+    
+    await storage.addUser(newUser);
 
-    console.log('User registered (in-memory):', { id: newUser.id, email: newUser.email, username: newUser.username });
+    console.log('User registered (persistent storage):', { id: newUser.id, email: newUser.email, username: newUser.username });
     res.status(201).json({ 
         message: 'User registered successfully. Please login.', 
         userId: newUser.id,
@@ -69,12 +91,12 @@ router.post('/login', async (req, res) => {
     return res.status(500).json({ message: 'Authentication configuration error on server.' });
   }
 
-  const user = users.find(user => user.email === email);
-  if (!user) {
-    return res.status(401).json({ message: 'Invalid email or password.' }); // Generic message for security
-  }
-
   try {
+    const user = await storage.findUserByEmail(email);
+    if (!user) {
+      return res.status(401).json({ message: 'Invalid email or password.' }); // Generic message for security
+    }
+
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({ message: 'Invalid email or password.' }); // Generic message
@@ -108,7 +130,7 @@ router.post('/login', async (req, res) => {
 });
 
 // GET /api/v1/auth/me (Protected route example)
-router.get('/me', authMiddleware, async (req, res) => { // Made async for consistency
+router.get('/me', authMiddleware, async (req, res) => {
   const authHeader = req.headers.authorization;
   const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null;
   
@@ -118,23 +140,29 @@ router.get('/me', authMiddleware, async (req, res) => { // Made async for consis
     return res.status(401).json({ message: 'Unauthorized: Token has been logged out/invalidated' });
   }
 
-  // Simulate DB read
-  const user = await new Promise(resolve => setTimeout(() => resolve(users.find(u => u.id === req.user.id)), 10));
+  try {
+    const user = await storage.findUserById(req.user.id);
 
-  if (!user) {
-    console.error(`/me: User ID ${req.user.id} from token not found in store.`);
-    return res.status(404).json({ message: 'User not found.' });
+    if (!user) {
+      console.error(`/me: User ID ${req.user.id} from token not found in store.`);
+      return res.status(404).json({ message: 'User not found.' });
+    }
+    
+    console.log('/me endpoint accessed by user:', { id: user.id, email: user.email });
+    res.json({ 
+      id: user.id, 
+      email: user.email, 
+      username: user.username,
+      createdAt: user.createdAt
+    });
+  } catch (error) {
+    console.error('Error fetching user:', error);
+    res.status(500).json({ message: 'Error fetching user data.' });
   }
-  console.log('/me endpoint accessed by user:', { id: user.id, email: user.email });
-  res.json({ 
-    id: user.id, 
-    email: user.email, 
-    username: user.username, 
-  });
 });
 
 // POST /api/v1/auth/logout (Conceptual)
-router.post('/logout', authMiddleware, async (req, res) => { // Made async
+router.post('/logout', authMiddleware, async (req, res) => {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.substring(7);
@@ -145,6 +173,5 @@ router.post('/logout', authMiddleware, async (req, res) => { // Made async
   await new Promise(resolve => setTimeout(resolve, 20));
   res.status(200).json({ message: 'Logout successful (conceptual server-side action completed).' });
 });
-
 
 module.exports = router;

@@ -1,10 +1,8 @@
-
-
 import React, { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { UserAlert, NotificationType } from '../../types';
-import { useAppContext } from '../../contexts/AppContext';
-import { Button } from '../ui/Button';
+import { useUserAlertStore } from '../../stores/userAlertStore';
+import { Button } from '../../design-system/components/Button';
 import { formatRelativeDate } from '../../utils/formatting';
 import { Info, AlertTriangle, CheckCircle, XCircle, BellOff, Trash2, CheckCheck, CircleSlash } from 'lucide-react';
 
@@ -31,10 +29,10 @@ const NotificationIconColors: Record<NotificationType, string> = {
 };
 
 export const NotificationPanel: React.FC<NotificationPanelProps> = ({ onClose }) => {
-  const { appData, markUserAlertAsRead, markAllAlertsAsRead, clearReadAlerts, clearAllAlerts } = useAppContext();
+  const { userAlerts, markUserAlertAsRead, markAllAlertsAsRead, clearReadAlerts, clearAllAlerts } = useUserAlertStore();
   const panelRef = useRef<HTMLDivElement>(null);
 
-  const sortedAlerts = [...appData.userAlerts].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const sortedAlerts = [...userAlerts].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -116,10 +114,10 @@ export const NotificationPanel: React.FC<NotificationPanelProps> = ({ onClose })
 
       {sortedAlerts.length > 0 && (
         <div className="p-2 border-t border-gray-200 dark:border-gray-600 flex flex-wrap gap-1.5 justify-end">
-          <Button variant="ghost" size="sm" onClick={handleMarkAllRead} disabled={appData.userAlerts.every(a => a.isRead)}>
+          <Button variant="ghost" size="sm" onClick={handleMarkAllRead} disabled={userAlerts.every(a => a.isRead)}>
             <CheckCheck size={14} className="mr-1"/> Mark All Read
           </Button>
-          <Button variant="ghost" size="sm" onClick={handleClearRead} disabled={!appData.userAlerts.some(a => a.isRead)}>
+          <Button variant="ghost" size="sm" onClick={handleClearRead} disabled={!userAlerts.some(a => a.isRead)}>
             <Trash2 size={14} className="mr-1"/> Clear Read
           </Button>
            <Button variant="danger" size="sm" onClick={handleClearAll}>

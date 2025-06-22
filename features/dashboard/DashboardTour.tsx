@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Modal } from '../../design-system/components/Modal';
 import { Button } from '../../design-system/components/Button';
-import { useAppContext } from '../../contexts/AppContext';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { CheckCircle, ArrowRight, ArrowLeft, Lightbulb, LayoutDashboard, Zap, ListChecks, MessageCircle, UserCircle } from 'lucide-react';
 
 interface TutorialStep {
@@ -56,7 +56,7 @@ interface DashboardTourProps {
 }
 
 export const DashboardTour: React.FC<DashboardTourProps> = ({ isOpen, onClose }) => {
-  const { appData, markTutorialAsCompleted } = useAppContext();
+  const { settings, markTutorialAsCompleted } = useSettingsStore();
   const [currentStep, setCurrentStep] = useState(0);
 
   // This effect is important if isOpen can change AFTER the component mounts
@@ -67,7 +67,7 @@ export const DashboardTour: React.FC<DashboardTourProps> = ({ isOpen, onClose })
     }
   }, [isOpen]);
 
-  const isCompleted = appData.settings.tutorialsCompleted?.[DASHBOARD_TOUR_COMPLETED_KEY];
+  const isCompleted = settings.tutorialsCompleted?.[DASHBOARD_TOUR_COMPLETED_KEY];
 
   const handleNext = () => {
     if (currentStep < steps.length - 1) {

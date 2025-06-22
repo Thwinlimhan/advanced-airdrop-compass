@@ -1,7 +1,7 @@
-
 const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../authMiddleware');
+const storage = require('../utils/storage');
 
 let airdropsStore = {}; // { userId: [airdrop1, airdrop2] }
 
@@ -27,67 +27,106 @@ const simulateDBRead = async (data) => {
 
 // --- Main Airdrop Routes ---
 router.get('/', async (req, res) => {
-  const userAirdrops = await simulateDBRead(airdropsStore[req.user.id]);
-  res.json(userAirdrops);
+  try {
+    const userId = req.user.id;
+    const airdrops = await storage.getUserData(userId, 'airdrops');
+    res.json(airdrops);
+  } catch (error) {
+    console.error('Error fetching airdrops:', error);
+    res.status(500).json({ message: 'Error fetching airdrops' });
+  }
 });
 
 router.post('/', async (req, res) => {
-  const { projectName, blockchain, status, potential, myStatus } = req.body;
-  if (!projectName || !blockchain || !status || !potential || !myStatus) {
-    return res.status(400).json({ message: 'Missing required fields for airdrop' });
+  try {
+    const userId = req.user.id;
+    const airdropData = req.body;
+    
+    // Generate unique ID
+    airdropData.id = `airdrop_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    airdropData.userId = userId;
+    airdropData.createdAt = new Date().toISOString();
+    airdropData.updatedAt = new Date().toISOString();
+    
+    // Get existing airdrops and add new one
+    const airdrops = await storage.getUserData(userId, 'airdrops');
+    airdrops.push(airdropData);
+    
+    await storage.saveUserData(userId, 'airdrops', airdrops);
+    
+    res.status(201).json(airdropData);
+  } catch (error) {
+    console.error('Error creating airdrop:', error);
+    res.status(500).json({ message: 'Error creating airdrop' });
   }
-  const newAirdrop = {
-    id: `airdrop_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-    userId: req.user.id,
-    dateAdded: new Date().toISOString(),
-    tasks: req.body.tasks || [], // Ensure tasks array exists from start
-    transactions: [], claimedTokens: [], sybilChecklist: [], roadmapEvents: [], customFields: [],
-    tags: req.body.tags || [], isArchived: req.body.isArchived || false, timeSpentHours: req.body.timeSpentHours || 0,
-    notificationOverrides: req.body.notificationOverrides || undefined,
-    ...req.body 
-  };
-  airdropsStore[req.user.id].push(newAirdrop);
-  await simulateDBWrite();
-  res.status(201).json(newAirdrop);
 });
 
-router.get('/:airdropId', async (req, res) => {
-  const userAirdrops = await simulateDBRead(airdropsStore[req.user.id]);
-  const airdrop = userAirdrops.find(a => a.id === req.params.airdropId);
-  if (airdrop) res.json(airdrop); else res.status(404).json({ message: 'Airdrop not found' });
+router.get('/:id', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const airdropId = req.params.id;
+    const airdrops = await storage.getUserData(userId, 'airdrops');
+    const airdrop = airdrops.find(a => a.id === airdropId);
+    
+    if (!airdrop) {
+      return res.status(404).json({ message: 'Airdrop not found' });
+    }
+    
+    res.json(airdrop);
+  } catch (error) {
+    console.error('Error fetching airdrop:', error);
+    res.status(500).json({ message: 'Error fetching airdrop' });
+  }
 });
 
-router.put('/:airdropId', async (req, res) => {
-  const userAirdrops = airdropsStore[req.user.id];
-  const idx = userAirdrops.findIndex(a => a.id === req.params.airdropId);
-  if (idx > -1) {
-    // Ensure nested arrays are preserved if not in req.body
-    const existingAirdrop = userAirdrops[idx];
-    userAirdrops[idx] = { 
-        ...existingAirdrop, 
-        ...req.body, 
-        id: existingAirdrop.id, 
-        userId: existingAirdrop.userId,
-        tasks: req.body.tasks !== undefined ? req.body.tasks : existingAirdrop.tasks,
-        transactions: req.body.transactions !== undefined ? req.body.transactions : existingAirdrop.transactions,
-        claimedTokens: req.body.claimedTokens !== undefined ? req.body.claimedTokens : existingAirdrop.claimedTokens,
-        sybilChecklist: req.body.sybilChecklist !== undefined ? req.body.sybilChecklist : existingAirdrop.sybilChecklist,
-        roadmapEvents: req.body.roadmapEvents !== undefined ? req.body.roadmapEvents : existingAirdrop.roadmapEvents,
-        customFields: req.body.customFields !== undefined ? req.body.customFields : existingAirdrop.customFields,
+router.put('/:id', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const airdropId = req.params.id;
+    const updateData = req.body;
+    
+    const airdrops = await storage.getUserData(userId, 'airdrops');
+    const airdropIndex = airdrops.findIndex(a => a.id === airdropId);
+    
+    if (airdropIndex === -1) {
+      return res.status(404).json({ message: 'Airdrop not found' });
+    }
+    
+    // Update airdrop
+    airdrops[airdropIndex] = {
+      ...airdrops[airdropIndex],
+      ...updateData,
+      updatedAt: new Date().toISOString()
     };
-    await simulateDBWrite();
-    res.json(userAirdrops[idx]);
-  } else res.status(404).json({ message: 'Airdrop not found' });
+    
+    await storage.saveUserData(userId, 'airdrops', airdrops);
+    
+    res.json(airdrops[airdropIndex]);
+  } catch (error) {
+    console.error('Error updating airdrop:', error);
+    res.status(500).json({ message: 'Error updating airdrop' });
+  }
 });
 
-router.delete('/:airdropId', async (req, res) => {
-  const userAirdrops = airdropsStore[req.user.id];
-  const len = userAirdrops.length;
-  airdropsStore[req.user.id] = userAirdrops.filter(a => a.id !== req.params.airdropId);
-  if (airdropsStore[req.user.id].length < len) {
-    await simulateDBWrite();
-    res.json({ message: 'Airdrop deleted' });
-  } else res.status(404).json({ message: 'Airdrop not found' });
+router.delete('/:id', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const airdropId = req.params.id;
+    
+    const airdrops = await storage.getUserData(userId, 'airdrops');
+    const filteredAirdrops = airdrops.filter(a => a.id !== airdropId);
+    
+    if (filteredAirdrops.length === airdrops.length) {
+      return res.status(404).json({ message: 'Airdrop not found' });
+    }
+    
+    await storage.saveUserData(userId, 'airdrops', filteredAirdrops);
+    
+    res.json({ message: 'Airdrop deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting airdrop:', error);
+    res.status(500).json({ message: 'Error deleting airdrop' });
+  }
 });
 
 router.post('/batch-update', async (req, res) => {

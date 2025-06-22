@@ -6,22 +6,23 @@ import { Textarea } from '../../design-system/components/Textarea';
 import { Input } from '../../design-system/components/Input';
 import { Select } from '../../design-system/components/Select'; // Added for linking
 import { PlusCircle, Edit3, Trash2, Save, XCircle, Link2 } from 'lucide-react';
-import { useAppContext } from '../../contexts/AppContext';
+import { useLearningResourceStore } from '../../stores/learningResourceStore';
+import { useAirdropStore } from '../../stores/airdropStore';
 
 interface StrategyNotebookProps {
   initialSelectedNoteId?: string;
 }
 
 export const StrategyNotebook: React.FC<StrategyNotebookProps> = ({ initialSelectedNoteId }) => {
-  const { appData, addStrategyNote, updateStrategyNote, deleteStrategyNote } = useAppContext();
+  const { strategyNotes, addStrategyNote, updateStrategyNote, deleteStrategyNote } = useLearningResourceStore();
+  const { airdrops } = useAirdropStore(); // For linking options
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(initialSelectedNoteId || null);
   const [currentTitle, setCurrentTitle] = useState('');
   const [currentContent, setCurrentContent] = useState('');
   const [currentLinkedAirdropIds, setCurrentLinkedAirdropIds] = useState<string[]>([]); // Added
   const [isEditing, setIsEditing] = useState(false); 
 
-  const notes = appData.strategyNotes;
-  const airdrops = appData.airdrops; // For linking options
+  const notes = strategyNotes;
 
   useEffect(() => {
     if (initialSelectedNoteId && notes.find(n => n.id === initialSelectedNoteId)) {

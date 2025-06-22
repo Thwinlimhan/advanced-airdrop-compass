@@ -25,7 +25,21 @@ import {
   Eye,
   Heart,
   MessageSquare,
-  Tag
+  Tag,
+  SortAsc,
+  SortDesc,
+  RefreshCw,
+  Plus,
+  Calendar,
+  TrendingUp,
+  Target,
+  Shield,
+  Zap,
+  Users,
+  Check,
+  CheckCheck,
+  ChevronDown,
+  ChevronRight
 } from 'lucide-react';
 import { PageWrapper } from '../../components/layout/PageWrapper';
 import { Modal } from '../../design-system/components/Modal';
@@ -39,40 +53,49 @@ import { GuideForm } from './GuideForm';
 import { GlossaryForm } from './GlossaryForm';
 import { GuideSubmissionForm } from './GuideSubmissionForm';
 import { SybilPreventionGuidePage } from './SybilPreventionGuide';
-import { useAppContext } from '../../contexts/AppContext';
-import { LearningResource, LearningTab } from '../../types';
+import { LearningResource, LearningTab, StrategyNote, LearningSubTask } from '../../types';
 import { useToast } from '../../hooks/useToast';
 import { LEARNING_HUB_SUB_NAV } from '../../constants';
 import { AddAirdropTutorial } from '../tutorials/AddAirdropTutorial';
+import { useLearningResourceStore } from '../../stores/learningResourceStore';
+import { useStrategyNoteStore } from '../../stores/strategyNoteStore';
+import { Input } from '../../design-system/components/Input';
+import { Select } from '../../design-system/components/Select';
+import { formatDate } from '../../utils/formatting';
+import { useTranslation } from '../../hooks/useTranslation';
 
 interface LearningPageProps {
   learningResources?: LearningResource[];
   onAddResource?: (resource: Omit<LearningResource, 'id'>) => void;
   onUpdateResource?: (id: string, updates: Partial<LearningResource>) => void;
   onDeleteResource?: (id: string) => void;
+  initialNotebookId?: string;
 }
 
-export const EnhancedLearningPage: React.FC<LearningPageProps> = ({
+export const LearningPage: React.FC<LearningPageProps> = ({
   learningResources = [],
   onAddResource,
   onUpdateResource,
-  onDeleteResource
+  onDeleteResource,
+  initialNotebookId
 }) => {
-  const { appData, addLearningResource, updateLearningResource, deleteLearningResource } = useAppContext();
+  const { learningResources: zustandLearningResources, addLearningResource, updateLearningResource, deleteLearningResource, fetchLearningResources, isLoading } = useLearningResourceStore();
+  const { strategyNotes, addStrategyNote, updateStrategyNote, deleteStrategyNote, fetchStrategyNotes } = useStrategyNoteStore();
   const { addToast } = useToast();
+  const { t } = useTranslation();
   const { subPage, itemId } = useParams<{ subPage?: LearningTab, itemId?: string }>();
   const navigate = useNavigate();
   const { actualTheme } = useTheme();
 
   const [activeTab, setActiveTab] = useState<LearningTab>(subPage || 'guides');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedFilter, setSelectedFilter] = useState<string>('all');
-  const [sortBy, setSortBy] = useState<'date' | 'title' | 'rating' | 'views'>('date');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterCategory, setFilterCategory] = useState('');
+  const [sortBy, setSortBy] = useState<'title' | 'date' | 'type'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [selectedResource, setSelectedResource] = useState<LearningResource | null>(null);
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingResource, setEditingResource] = useState<LearningResource | null>(null);
+  const [editingNote, setEditingNote] = useState<StrategyNote | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
   const [isGuideModalOpen, setIsGuideModalOpen] = useState(false);
@@ -81,7 +104,7 @@ export const EnhancedLearningPage: React.FC<LearningPageProps> = ({
   const [isGlossaryModalOpen, setIsGlossaryModalOpen] = useState(false);
   const [editingGlossaryTerm, setEditingGlossaryTerm] = useState<LearningResource | null>(null);
   
-  const [initialNotebookId, setInitialNotebookId] = useState<string | undefined>(undefined);
+  const [initialNotebookIdState, setInitialNotebookIdState] = useState<string | undefined>(initialNotebookId);
   const [isGuideSubmissionModalOpen, setIsGuideSubmissionModalOpen] = useState(false);
   const [showUserSubmittedOnly, setShowUserSubmittedOnly] = useState(false);
 
@@ -137,16 +160,20 @@ export const EnhancedLearningPage: React.FC<LearningPageProps> = ({
   ];
 
   const filteredResources = useMemo(() => {
-    let filtered = learningResources.filter(resource => {
+    let filtered = zustandLearningResources.filter(resource => {
       if (activeTab === 'guides' && resource.type !== 'guide') return false;
       if (activeTab === 'glossary' && resource.type !== 'glossary') return false;
       
-      if (searchTerm) {
-        const searchLower = searchTerm.toLowerCase();
+      if (searchQuery) {
+        const searchLower = searchQuery.toLowerCase();
         const matchesSearch = 
           resource.title.toLowerCase().includes(searchLower) ||
           resource.content?.toLowerCase().includes(searchLower);
         if (!matchesSearch) return false;
+      }
+
+      if (filterCategory && filterCategory !== 'all') {
+        if (resource.category !== filterCategory) return false;
       }
 
       return true;
@@ -161,13 +188,14 @@ export const EnhancedLearningPage: React.FC<LearningPageProps> = ({
         case 'date':
           comparison = new Date(a.submissionDate || '').getTime() - new Date(b.submissionDate || '').getTime();
           break;
-        default:
-          comparison = 0;
+        case 'type':
+          comparison = a.type.localeCompare(b.type);
+          break;
       }
-      return sortOrder === 'desc' ? -comparison : comparison;
+      return sortOrder === 'asc' ? comparison : -comparison;
     });
     return filtered;
-  }, [learningResources, activeTab, searchTerm, selectedFilter, sortBy, sortOrder]);
+  }, [zustandLearningResources, activeTab, searchQuery, filterCategory, sortBy, sortOrder]);
 
   useEffect(() => {
     if (subPage && tabs.find(tab => tab.id === subPage)) {
@@ -175,12 +203,12 @@ export const EnhancedLearningPage: React.FC<LearningPageProps> = ({
     }
     
     if (itemId && activeTab === 'guides') {
-      const resource = learningResources.find(r => r.id === itemId && r.type === 'guide');
+      const resource = zustandLearningResources.find(r => r.id === itemId && r.type === 'guide');
       if (resource) {
         setSelectedResource(resource);
       }
     }
-  }, [subPage, itemId, learningResources, activeTab]);
+  }, [subPage, itemId, zustandLearningResources, activeTab]);
 
   const handleTabChange = useCallback((tabId: LearningTab) => {
     setActiveTab(tabId);
@@ -195,61 +223,79 @@ export const EnhancedLearningPage: React.FC<LearningPageProps> = ({
     }
   }, [navigate]);
 
-  const handleCreateResource = useCallback(() => {
-    setEditingResource(null);
-    setIsCreateModalOpen(true);
-  }, []);
+  const handleAddResource = async (resourceData: Omit<LearningResource, 'id'>) => {
+    try {
+      await addLearningResource(resourceData);
+      addToast('Learning resource added successfully.', 'success');
+      setIsAddModalOpen(false);
+    } catch (error) {
+      addToast('Failed to add learning resource.', 'error');
+    }
+  };
 
-  const handleEditResource = useCallback((resource: LearningResource) => {
-    setEditingResource(resource);
-    setIsEditModalOpen(true);
-  }, []);
+  const handleUpdateResource = async (resource: LearningResource) => {
+    try {
+      await updateLearningResource(resource);
+      addToast('Learning resource updated successfully.', 'success');
+      setEditingResource(null);
+    } catch (error) {
+      addToast('Failed to update learning resource.', 'error');
+    }
+  };
 
-  const handleDeleteResource = useCallback((resource: LearningResource) => {
-    if (window.confirm(`Are you sure you want to delete "${resource.title}"?`)) {
-      onDeleteResource?.(resource.id);
-      if (selectedResource?.id === resource.id) {
-        setSelectedResource(null);
+  const handleDeleteResource = async (resourceId: string) => {
+    const resourceToDelete = zustandLearningResources.find(r => r.id === resourceId);
+    if (resourceToDelete && window.confirm(`Are you sure you want to delete "${resourceToDelete.title}"?`)) {
+      try {
+        await deleteLearningResource(resourceId);
+        addToast('Learning resource deleted successfully.', 'success');
+      } catch (error) {
+        addToast('Failed to delete learning resource.', 'error');
       }
     }
-  }, [onDeleteResource, selectedResource]);
+  };
 
-  const renderResourceCard = (resource: LearningResource) => (
-    <Card
-      key={resource.id}
-      variant="default"
-      interactive
-      className="h-full hover:shadow-xl transition-all duration-300"
-      onClick={() => handleResourceSelect(resource)}
-    >
-      <CardContent>
-        <div className="flex items-start justify-between mb-3">
-          <div className="flex items-center space-x-2">
-            {/* No difficulty property */}
-          </div>
-        </div>
-        <h3 className="text-lg font-semibold text-primary-light dark:text-primary-dark mb-1 hover:underline cursor-pointer">
-          {resource.title}
-        </h3>
-        <div className="flex items-center text-xs mb-2">
-          {resource.author && <span className="text-muted-light dark:text-muted-dark">By: {resource.author}</span>}
-        </div>
-        <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-3">
-          {resource.content?.substring(0, 150) || 'No description available'}
-        </p>
-      </CardContent>
-    </Card>
-  );
+  const handleAddNote = async (noteData: Omit<StrategyNote, 'id' | 'lastModified'>) => {
+    try {
+      await addStrategyNote(noteData);
+      addToast('Strategy note added successfully.', 'success');
+      setEditingNote(null);
+    } catch (error) {
+      addToast('Failed to add strategy note.', 'error');
+    }
+  };
+
+  const handleUpdateNote = async (note: StrategyNote) => {
+    try {
+      await updateStrategyNote(note);
+      addToast('Strategy note updated successfully.', 'success');
+      setEditingNote(null);
+    } catch (error) {
+      addToast('Failed to update strategy note.', 'error');
+    }
+  };
+
+  const handleDeleteNote = async (noteId: string) => {
+    const noteToDelete = strategyNotes.find(n => n.id === noteId);
+    if (noteToDelete && window.confirm(`Are you sure you want to delete "${noteToDelete.title}"?`)) {
+      try {
+        await deleteStrategyNote(noteId);
+        addToast('Strategy note deleted successfully.', 'success');
+      } catch (error) {
+        addToast('Failed to delete strategy note.', 'error');
+      }
+    }
+  };
 
   const guides = useMemo(() => {
-    let allGuides = learningResources.filter(r => r.type === 'guide').sort((a,b) => a.title.localeCompare(b.title));
+    let allGuides = zustandLearningResources.filter(r => r.type === 'guide').sort((a,b) => a.title.localeCompare(b.title));
     if (showUserSubmittedOnly) {
         allGuides = allGuides.filter(g => g.author === "User Submission");
     }
     return allGuides;
-  }, [learningResources, showUserSubmittedOnly]);
+  }, [zustandLearningResources, showUserSubmittedOnly]);
   
-  const glossaryTerms = learningResources.filter(r => r.type === 'glossary').sort((a,b) => a.title.localeCompare(b.title));
+  const glossaryTerms = zustandLearningResources.filter(r => r.type === 'glossary').sort((a,b) => a.title.localeCompare(b.title));
 
   const handleSelectGuide = (guide: LearningResource) => {
     setSelectedResource(guide);
@@ -362,7 +408,7 @@ export const EnhancedLearningPage: React.FC<LearningPageProps> = ({
     <Button
         variant={activeTab === tabId ? 'primary' : 'outline'}
         onClick={() => { 
-            setInitialNotebookId(undefined);
+            setInitialNotebookIdState(undefined);
             setSelectedResource(null);
             navigate(`/learning/${tabId}`);
         }}
@@ -373,137 +419,1099 @@ export const EnhancedLearningPage: React.FC<LearningPageProps> = ({
     </Button>
   );
 
+  const filteredAndSortedResources = zustandLearningResources
+    .filter(resource => {
+      const matchesSearch = resource.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                           resource.content.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesCategory = !filterCategory || resource.category === filterCategory;
+      const matchesType = resource.type === activeTab;
+      return matchesSearch && matchesCategory && matchesType;
+    })
+    .sort((a, b) => {
+      let comparison = 0;
+      switch (sortBy) {
+        case 'title':
+          comparison = a.title.localeCompare(b.title);
+          break;
+        case 'date':
+          comparison = new Date(a.submissionDate || '').getTime() - new Date(b.submissionDate || '').getTime();
+          break;
+        case 'type':
+          comparison = a.type.localeCompare(b.type);
+          break;
+      }
+      return sortOrder === 'asc' ? comparison : -comparison;
+    });
+
+  const filteredAndSortedNotes = strategyNotes
+    .filter(note => {
+      const matchesSearch = note.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                           note.content.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchesSearch;
+    })
+    .sort((a, b) => {
+      const comparison = new Date(a.lastModified).getTime() - new Date(b.lastModified).getTime();
+      return sortOrder === 'asc' ? comparison : -comparison;
+    });
+
+  const categories = useMemo(() => {
+    const uniqueCategories = new Set<string>();
+    zustandLearningResources.forEach(resource => {
+      if (resource.category) {
+        uniqueCategories.add(resource.category);
+      }
+    });
+    return Array.from(uniqueCategories).sort();
+  }, [zustandLearningResources]);
+
   return (
     <PageWrapper>
-      <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-6 gap-4">
-        <h2 className="text-2xl font-semibold text-text-light dark:text-text-dark">Crypto Learning Hub</h2>
-         {activeTab === 'guides' && !selectedResource && (
-            <div className="flex gap-2">
-                <Button onClick={() => setIsGuideSubmissionModalOpen(true)} variant="outline" leftIcon={<User size={18}/>}>Submit Your Guide</Button>
-                <Button onClick={openGuideModalForCreate} leftIcon={<PlusCircle size={18}/>}>Add New Guide</Button>
-            </div>
-        )}
-        {activeTab === 'glossary' && (
-             <Button onClick={openGlossaryModalForCreate} leftIcon={<PlusCircle size={18}/>}>Add New Term</Button>
-        )}
-      </div>
-
-      <div className="mb-6 flex space-x-1 sm:space-x-2 border-b border-gray-300 dark:border-gray-600 pb-px overflow-x-auto">
-        {LEARNING_HUB_SUB_NAV.map(navItem => (
-           <TabButton key={navItem.id} tabId={navItem.id as LearningTab} label={navItem.label} icon={navItem.icon} />
-        ))}
-      </div>
-
-      {activeTab === 'guides' && (
-        selectedResource ? (
-          <div>
-            <div className="flex justify-between items-center mb-4">
-                <Button onClick={handleBackToGuidesList} variant="outline">
-                &larr; Back to Guides List
+      <div className="p-6 space-y-6">
+        {/* Header */}
+        <Card variant="elevated" padding="lg">
+          <CardHeader>
+            <h3 className="text-lg font-semibold flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <BookOpen size={24} className="text-accent" />
+                Learning Center
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fetchLearningResources()}
+                  leftIcon={<RefreshCw size={16} />}
+                  disabled={isLoading}
+                >
+                  {isLoading ? 'Loading...' : 'Refresh'}
                 </Button>
-                <div className="flex space-x-2">
-                    <Button variant="outline" size="sm" onClick={() => openGuideModalForEdit(selectedResource)} leftIcon={<Edit3 size={16}/>}>Edit</Button>
-                    <Button variant="danger" size="sm" onClick={async () => await handleDeleteGuide(selectedResource.id, selectedResource.title)} leftIcon={<Trash2 size={16}/>}>Delete</Button>
-                </div>
+                {activeTab !== 'notebook' && (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => setIsAddModalOpen(true)}
+                    leftIcon={<Plus size={16} />}
+                  >
+                    Add Resource
+                  </Button>
+                )}
+                {activeTab === 'notebook' && (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => setEditingNote({ id: '', title: '', content: '', lastModified: new Date().toISOString() })}
+                    leftIcon={<Plus size={16} />}
+                  >
+                    Add Note
+                  </Button>
+                )}
+              </div>
+            </h3>
+          </CardHeader>
+          <CardContent>
+            <p className="text-secondary">
+              Access guides, tutorials, and strategic insights to improve your airdrop farming.
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Tabs */}
+        <Card variant="default" padding="md">
+          <CardContent>
+            <div className="flex flex-wrap gap-2">
+              {tabs.map((tab) => {
+                const Icon = tab.icon;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      activeTab === tab.id
+                        ? 'bg-accent text-accent-foreground'
+                        : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'
+                    }`}
+                  >
+                    <Icon size={16} />
+                    {tab.label}
+                  </button>
+                );
+              })}
             </div>
-            <GuideReader guide={selectedResource} />
+          </CardContent>
+        </Card>
+
+        {/* Filters */}
+        <Card variant="default" padding="md">
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <Input
+                placeholder="Search resources..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                leftIcon={<Search size={16} />}
+              />
+              {activeTab !== 'notebook' && categories.length > 0 && (
+                <Select
+                  value={filterCategory}
+                  onChange={(e) => setFilterCategory(e.target.value)}
+                  options={[
+                    { value: '', label: 'All Categories' },
+                    ...categories.map(cat => ({ value: cat, label: cat }))
+                  ]}
+                />
+              )}
+              <Select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as 'title' | 'date' | 'type')}
+                options={[
+                  { value: 'date', label: 'Sort by Date' },
+                  { value: 'title', label: 'Sort by Title' },
+                  { value: 'type', label: 'Sort by Type' }
+                ]}
+              />
+              <Button
+                variant="outline"
+                onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+                leftIcon={sortOrder === 'asc' ? <SortAsc size={16} /> : <SortDesc size={16} />}
+              >
+                {sortOrder === 'asc' ? 'Ascending' : 'Descending'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Content */}
+        {activeTab === 'notebook' ? (
+          <div className="space-y-4">
+            {filteredAndSortedNotes.map((note) => (
+              <Card key={note.id} variant="default" padding="md">
+                <CardContent>
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <h4 className="text-lg font-semibold mb-2">{note.title}</h4>
+                      <p className="text-gray-600 dark:text-gray-400 mb-3 line-clamp-3">
+                        {note.content}
+                      </p>
+                      <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
+                        <div className="flex items-center gap-1">
+                          <Calendar size={14} />
+                          <span>Modified: {formatDate(note.lastModified)}</span>
+                        </div>
+                        {note.linkedAirdropIds && note.linkedAirdropIds.length > 0 && (
+                          <div className="flex items-center gap-1">
+                            <Tag size={14} />
+                            <span>{note.linkedAirdropIds.length} linked airdrop(s)</span>
+                          </div>
+                        )}
+                        {note.subTasks && note.subTasks.length > 0 && (
+                          <div className="flex items-center gap-1">
+                            <Target size={14} />
+                            <span>
+                              {note.subTasks.filter(st => st.completed).length}/{note.subTasks.length} subtasks
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 ml-4">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setEditingNote(note)}
+                        leftIcon={<Edit3 size={14} />}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleDeleteNote(note.id)}
+                        leftIcon={<Trash2 size={14} />}
+                        className="text-red-600 hover:text-red-700"
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
         ) : (
-        <>
-          <div className="mb-4 flex justify-end">
-            <Button onClick={() => setShowUserSubmittedOnly(!showUserSubmittedOnly)} variant="ghost" size="sm" leftIcon={<FilterIcon size={14}/>}>
-              {showUserSubmittedOnly ? 'Show All Guides' : 'Show Only User Submitted'}
-            </Button>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {guides.length === 0 ? (
-                <p className="col-span-full text-center text-muted-light dark:text-muted-dark py-8">
-                  {showUserSubmittedOnly ? "No user submitted guides found." : "No guides available. Click 'Add New Guide' or 'Submit Your Guide' to create one."}
-                </p>
-            ) : (
-                guides.map(guide => (
-                <Card key={guide.id} className="flex flex-col justify-between">
-                    <div>
-                        <h3 
-                            className="text-lg font-semibold text-primary-light dark:text-primary-dark mb-1 hover:underline cursor-pointer"
-                            onClick={() => handleSelectGuide(guide)}
-                        >
-                            {guide.title}
-                        </h3>
-                        <div className="flex items-center text-xs mb-2">
-                            {guide.author && <span className="text-muted-light dark:text-muted-dark">By: {guide.author}</span>}
-                        </div>
-                        <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-3">
-                        {guide.content?.substring(0, 150) || 'No description available'}
-                        </p>
+          <div className="space-y-4">
+            {filteredAndSortedResources.map((resource) => (
+              <Card key={resource.id} variant="default" padding="md">
+                <CardContent>
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <h4 className="text-lg font-semibold">{resource.title}</h4>
+                        <span className={`px-2 py-1 text-xs rounded-full ${
+                          resource.type === 'guide' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300' :
+                          resource.type === 'glossary' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' :
+                          'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300'
+                        }`}>
+                          {resource.type}
+                        </span>
+                        {resource.category && (
+                          <span className="px-2 py-1 text-xs bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 rounded-full">
+                            {resource.category}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-gray-600 dark:text-gray-400 mb-3 line-clamp-3">
+                        {resource.content}
+                      </p>
+                      <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
+                        {resource.author && (
+                          <div className="flex items-center gap-1">
+                            <Users size={14} />
+                            <span>{resource.author}</span>
+                          </div>
+                        )}
+                        {resource.submissionDate && (
+                          <div className="flex items-center gap-1">
+                            <Calendar size={14} />
+                            <span>{formatDate(resource.submissionDate)}</span>
+                          </div>
+                        )}
+                        {resource.sourceUrl && (
+                          <div className="flex items-center gap-1">
+                            <Tag size={14} />
+                            <span>Has source</span>
+                          </div>
+                        )}
+                        {resource.subTasks && resource.subTasks.length > 0 && (
+                          <div className="flex items-center gap-1">
+                            <Target size={14} />
+                            <span>
+                              {resource.subTasks.filter(st => st.completed).length}/{resource.subTasks.length} subtasks
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <div className="mt-4 flex space-x-2 justify-end">
-                        <Button variant="ghost" size="sm" onClick={() => openGuideModalForEdit(guide)} title="Edit Guide"><Edit3 size={16}/></Button>
-                        <Button variant="ghost" size="sm" onClick={async () => await handleDeleteGuide(guide.id, guide.title)} className="text-red-500 hover:text-red-700" title="Delete Guide"><Trash2 size={16}/></Button>
+                    <div className="flex items-center gap-2 ml-4">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setEditingResource(resource)}
+                        leftIcon={<Edit3 size={14} />}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleDeleteResource(resource.id)}
+                        leftIcon={<Trash2 size={14} />}
+                        className="text-red-600 hover:text-red-700"
+                      >
+                        Delete
+                      </Button>
                     </div>
-                </Card>
-                ))
-            )}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
-        </>
-        )
-      )}
+        )}
 
-      {activeTab === 'glossary' && (
-        <GlossaryList 
-            terms={glossaryTerms} 
-            onEdit={openGlossaryModalForEdit}
-            onDelete={handleDeleteGlossaryTerm}
-        />
-      )}
-      
-      {activeTab === 'sybilPrevention' && (
-        <SybilPreventionGuidePage />
-      )}
+        {/* Empty State */}
+        {((activeTab === 'notebook' && filteredAndSortedNotes.length === 0) ||
+          (activeTab !== 'notebook' && filteredAndSortedResources.length === 0)) && (
+          <Card variant="default" padding="xl">
+            <CardContent className="text-center py-12">
+              <BookOpen size={48} className="mx-auto text-gray-400 dark:text-gray-500 mb-4" />
+              <h3 className="text-lg font-semibold mb-2">No content found</h3>
+              <p className="text-secondary mb-4">
+                {searchQuery || filterCategory
+                  ? 'Try adjusting your search or filters.'
+                  : `No ${activeTab === 'notebook' ? 'strategy notes' : 'learning resources'} yet.`}
+              </p>
+              {!searchQuery && !filterCategory && (
+                <Button
+                  variant="primary"
+                  onClick={() => activeTab === 'notebook' ? setEditingNote({ id: '', title: '', content: '', lastModified: new Date().toISOString() }) : setIsAddModalOpen(true)}
+                  leftIcon={<Plus size={16} />}
+                >
+                  Add Your First {activeTab === 'notebook' ? 'Note' : 'Resource'}
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
-      {activeTab === 'notebook' && (
-        <StrategyNotebook initialSelectedNoteId={initialNotebookId} />
-      )}
+        {/* Modals */}
+        <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} title="Add Learning Resource">
+          <LearningResourceForm
+            onSubmit={handleAddResource}
+            onClose={() => setIsAddModalOpen(false)}
+            resourceType={activeTab}
+            categories={categories}
+          />
+        </Modal>
 
-      {activeTab === 'aiStrategy' && (
-        <Card title="AI Farming Strategist">
-            <AIStrategyAdvisor />
-        </Card>
-      )}
-      
-      {activeTab === 'aiAnalyst' && (
-         <AIAnalystPage />
-      )}
+        <Modal isOpen={!!editingResource} onClose={() => setEditingResource(null)} title="Edit Learning Resource">
+          {editingResource && (
+            <LearningResourceForm
+              onSubmit={async (resourceData) => {
+                const updatedResource: LearningResource = {
+                  ...editingResource,
+                  ...resourceData,
+                };
+                await handleUpdateResource(updatedResource);
+              }}
+              onClose={() => setEditingResource(null)}
+              initialData={editingResource}
+              resourceType={activeTab}
+              categories={categories}
+            />
+          )}
+        </Modal>
 
-      {activeTab === 'newsAnalysis' && ( 
-        <NewsSummarizer />
-      )}
-
-      {activeTab === 'tutorials' && (
-        <AddAirdropTutorial isOpen={true} onClose={() => {}} />
-      )}
-
-      <Modal isOpen={isGuideModalOpen} onClose={() => setIsGuideModalOpen(false)} title={editingGuide ? 'Edit Guide' : 'Add New Guide'} size="lg">
-        <GuideForm 
-            onSubmit={handleGuideFormSubmit} 
-            initialData={editingGuide || undefined} 
-            onClose={() => setIsGuideModalOpen(false)} 
-        />
-      </Modal>
-       <Modal isOpen={isGuideSubmissionModalOpen} onClose={() => setIsGuideSubmissionModalOpen(false)} title="Submit Your Crypto Guide" size="lg">
-        <GuideSubmissionForm
-            onSubmit={handleGuideSubmissionFormSubmit}
-            onClose={() => setIsGuideSubmissionModalOpen(false)}
-        />
-      </Modal>
-
-       <Modal isOpen={isGlossaryModalOpen} onClose={() => setIsGlossaryModalOpen(false)} title={editingGlossaryTerm ? 'Edit Glossary Term' : 'Add New Glossary Term'} size="md">
-        <GlossaryForm
-            onSubmit={handleGlossaryFormSubmit} 
-            initialData={editingGlossaryTerm || undefined} 
-            onClose={() => setIsGlossaryModalOpen(false)} 
-        />
-      </Modal>
+        <Modal isOpen={!!editingNote} onClose={() => setEditingNote(null)} title={editingNote?.id ? "Edit Strategy Note" : "Add Strategy Note"}>
+          {editingNote && (
+            <StrategyNoteForm
+              onSubmit={async (noteData) => {
+                if (editingNote.id) {
+                  // Edit existing note
+                  const updatedNote: StrategyNote = {
+                    ...editingNote,
+                    ...noteData,
+                    lastModified: new Date().toISOString(),
+                  };
+                  await handleUpdateNote(updatedNote);
+                } else {
+                  // Add new note
+                  await handleAddNote(noteData);
+                }
+              }}
+              onClose={() => setEditingNote(null)}
+              initialData={editingNote.id ? editingNote : undefined}
+            />
+          )}
+        </Modal>
+      </div>
     </PageWrapper>
   );
 };
+
+// Placeholder components for forms
+const LearningSubTaskForm: React.FC<{
+  onSubmit: (subtaskData: Omit<LearningSubTask, 'id'>) => void;
+  onClose: () => void;
+  initialData?: LearningSubTask;
+  parentId?: string;
+}> = ({ onSubmit, onClose, initialData, parentId }) => {
+  const [title, setTitle] = useState(initialData?.title || '');
+  const [description, setDescription] = useState(initialData?.description || '');
+  const [dueDate, setDueDate] = useState(initialData?.dueDate || '');
+  const [notes, setNotes] = useState(initialData?.notes || '');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { addToast } = useToast();
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim() || !description.trim()) {
+      addToast('Title and description are required', 'error');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const subtaskData: Omit<LearningSubTask, 'id'> = {
+        title: title.trim(),
+        description: description.trim(),
+        completed: false,
+        dueDate: dueDate.trim() || undefined,
+        notes: notes.trim() || undefined,
+        parentId: parentId,
+      };
+
+      onSubmit(subtaskData);
+      addToast(initialData ? 'Subtask updated successfully' : 'Subtask added successfully', 'success');
+      onClose();
+    } catch (error) {
+      addToast((error as Error).message || 'Failed to save subtask', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label htmlFor="subtask-title" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          Title *
+        </label>
+        <Input
+          id="subtask-title"
+          type="text"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Enter subtask title"
+          required
+          className="w-full"
+        />
+      </div>
+
+      <div>
+        <label htmlFor="subtask-description" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          Description *
+        </label>
+        <textarea
+          id="subtask-description"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Enter subtask description"
+          required
+          rows={3}
+          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+        />
+      </div>
+
+      <div>
+        <label htmlFor="subtask-due-date" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          Due Date
+        </label>
+        <Input
+          id="subtask-due-date"
+          type="date"
+          value={dueDate}
+          onChange={(e) => setDueDate(e.target.value)}
+          className="w-full"
+        />
+      </div>
+
+      <div>
+        <label htmlFor="subtask-notes" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          Notes
+        </label>
+        <textarea
+          id="subtask-notes"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Additional notes"
+          rows={2}
+          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+        />
+      </div>
+
+      <div className="flex justify-end gap-3 pt-4">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onClose}
+          disabled={isSubmitting}
+        >
+          Cancel
+        </Button>
+        <Button
+          type="submit"
+          variant="primary"
+          disabled={isSubmitting}
+        >
+          {isSubmitting ? (
+            <div className="flex items-center">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+              Saving...
+            </div>
+          ) : (
+            initialData ? 'Update Subtask' : 'Add Subtask'
+          )}
+        </Button>
+      </div>
+    </form>
+  );
+};
+
+const LearningResourceForm: React.FC<{
+  onSubmit: (resourceData: Omit<LearningResource, 'id'>) => Promise<void>;
+  onClose: () => void;
+  initialData?: LearningResource;
+  resourceType: string;
+  categories: string[];
+}> = ({ onSubmit, onClose, initialData, resourceType, categories }) => {
+  const [title, setTitle] = useState(initialData?.title || '');
+  const [content, setContent] = useState(initialData?.content || '');
+  const [category, setCategory] = useState(initialData?.category || '');
+  const [sourceUrl, setSourceUrl] = useState(initialData?.sourceUrl || '');
+  const [explanation, setExplanation] = useState(initialData?.explanation || '');
+  const [author, setAuthor] = useState(initialData?.author || '');
+  const [subTasks, setSubTasks] = useState<LearningSubTask[]>(initialData?.subTasks || []);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showSubtaskForm, setShowSubtaskForm] = useState(false);
+  const [editingSubtask, setEditingSubtask] = useState<LearningSubTask | null>(null);
+  const { addToast } = useToast();
+  const { t } = useTranslation();
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim() || !content.trim()) {
+      addToast('Title and content are required', 'error');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const resourceData: Omit<LearningResource, 'id'> = {
+        type: resourceType as 'guide' | 'glossary' | 'news_summary',
+        title: title.trim(),
+        content: content.trim(),
+        category: category.trim() || undefined,
+        sourceUrl: sourceUrl.trim() || undefined,
+        explanation: explanation.trim() || undefined,
+        author: author.trim() || undefined,
+        submissionDate: new Date().toISOString(),
+        subTasks: subTasks,
+      };
+
+      await onSubmit(resourceData);
+      addToast(initialData ? 'Resource updated successfully' : 'Resource added successfully', 'success');
+      onClose();
+    } catch (error) {
+      addToast((error as Error).message || 'Failed to save resource', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleAddSubtask = (subtaskData: Omit<LearningSubTask, 'id'>) => {
+    const newSubtask: LearningSubTask = {
+      ...subtaskData,
+      id: `subtask-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    };
+    setSubTasks([...subTasks, newSubtask]);
+    setShowSubtaskForm(false);
+  };
+
+  const handleUpdateSubtask = (subtaskData: Omit<LearningSubTask, 'id'>) => {
+    if (editingSubtask) {
+      const updatedSubtask: LearningSubTask = {
+        ...editingSubtask,
+        ...subtaskData,
+      };
+      setSubTasks(subTasks.map(st => st.id === editingSubtask.id ? updatedSubtask : st));
+      setEditingSubtask(null);
+    }
+  };
+
+  const handleDeleteSubtask = (subtaskId: string) => {
+    if (window.confirm('Are you sure you want to delete this subtask?')) {
+      setSubTasks(subTasks.filter(st => st.id !== subtaskId));
+      addToast('Subtask deleted successfully', 'success');
+    }
+  };
+
+  const handleToggleSubtask = (subtaskId: string) => {
+    setSubTasks(subTasks.map(st => 
+      st.id === subtaskId 
+        ? { 
+            ...st, 
+            completed: !st.completed,
+            completionDate: !st.completed ? new Date().toISOString() : undefined
+          }
+        : st
+    ));
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <div>
+        <label htmlFor="title" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          Title *
+        </label>
+        <Input
+          id="title"
+          type="text"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Enter resource title"
+          required
+          className="w-full"
+        />
+      </div>
+
+      <div>
+        <label htmlFor="content" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          Content *
+        </label>
+        <textarea
+          id="content"
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          placeholder="Enter resource content"
+          required
+          rows={6}
+          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+        />
+      </div>
+
+      <div>
+        <label htmlFor="category" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          Category
+        </label>
+        <Select
+          value={category}
+          onValueChange={(value) => setCategory(value as string)}
+          options={[
+            { value: '', label: 'Select a category' },
+            ...categories.map(cat => ({ value: cat, label: cat }))
+          ]}
+          placeholder="Select category"
+        />
+      </div>
+
+      <div>
+        <label htmlFor="sourceUrl" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          Source URL
+        </label>
+        <Input
+          id="sourceUrl"
+          type="url"
+          value={sourceUrl}
+          onChange={(e) => setSourceUrl(e.target.value)}
+          placeholder="https://example.com"
+          className="w-full"
+        />
+      </div>
+
+      <div>
+        <label htmlFor="explanation" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          Explanation
+        </label>
+        <textarea
+          id="explanation"
+          value={explanation}
+          onChange={(e) => setExplanation(e.target.value)}
+          placeholder="Additional explanation or context"
+          rows={3}
+          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+        />
+      </div>
+
+      <div>
+        <label htmlFor="author" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          Author
+        </label>
+        <Input
+          id="author"
+          type="text"
+          value={author}
+          onChange={(e) => setAuthor(e.target.value)}
+          placeholder="Enter author name"
+          className="w-full"
+        />
+      </div>
+
+      {/* Subtasks Section */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+            Subtasks ({subTasks.length})
+          </label>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setShowSubtaskForm(true)}
+            leftIcon={<Plus size={16} />}
+          >
+            Add Subtask
+          </Button>
+        </div>
+        
+        {subTasks.length > 0 && (
+          <div className="space-y-2 max-h-60 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-md p-3">
+            {subTasks.map((subtask) => (
+              <div key={subtask.id} className="flex items-center gap-3 p-2 bg-gray-50 dark:bg-gray-800 rounded-md">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleToggleSubtask(subtask.id)}
+                  className={`p-1 ${subtask.completed ? 'text-green-600' : 'text-gray-400'}`}
+                >
+                  {subtask.completed ? <CheckCheck size={16} /> : <Check size={16} />}
+                </Button>
+                <div className="flex-1 min-w-0">
+                  <div className={`font-medium ${subtask.completed ? 'line-through text-gray-500' : ''}`}>
+                    {subtask.title}
+                  </div>
+                  <div className={`text-sm ${subtask.completed ? 'text-gray-400' : 'text-gray-600 dark:text-gray-400'}`}>
+                    {subtask.description}
+                  </div>
+                  {subtask.dueDate && (
+                    <div className="text-xs text-gray-500">
+                      Due: {formatDate(subtask.dueDate)}
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setEditingSubtask(subtask)}
+                    className="p-1 text-blue-600 hover:text-blue-700"
+                  >
+                    <Edit3 size={14} />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDeleteSubtask(subtask.id)}
+                    className="p-1 text-red-600 hover:text-red-700"
+                  >
+                    <Trash2 size={14} />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="flex justify-end gap-3 pt-4">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onClose}
+          disabled={isSubmitting}
+        >
+          Cancel
+        </Button>
+        <Button
+          type="submit"
+          variant="primary"
+          disabled={isSubmitting}
+        >
+          {isSubmitting ? (
+            <div className="flex items-center">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+              Saving...
+            </div>
+          ) : (
+            initialData ? 'Update Resource' : 'Add Resource'
+          )}
+        </Button>
+      </div>
+
+      {/* Subtask Form Modal */}
+      <Modal 
+        isOpen={showSubtaskForm} 
+        onClose={() => setShowSubtaskForm(false)} 
+        title="Add Subtask"
+      >
+        <LearningSubTaskForm
+          onSubmit={handleAddSubtask}
+          onClose={() => setShowSubtaskForm(false)}
+        />
+      </Modal>
+
+      <Modal 
+        isOpen={!!editingSubtask} 
+        onClose={() => setEditingSubtask(null)} 
+        title="Edit Subtask"
+      >
+        {editingSubtask && (
+          <LearningSubTaskForm
+            onSubmit={handleUpdateSubtask}
+            onClose={() => setEditingSubtask(null)}
+            initialData={editingSubtask}
+          />
+        )}
+      </Modal>
+    </form>
+  );
+};
+
+const StrategyNoteForm: React.FC<{
+  onSubmit: (noteData: Omit<StrategyNote, 'id' | 'lastModified'>) => Promise<void>;
+  onClose: () => void;
+  initialData?: StrategyNote;
+}> = ({ onSubmit, onClose, initialData }) => {
+  const [title, setTitle] = useState(initialData?.title || '');
+  const [content, setContent] = useState(initialData?.content || '');
+  const [linkedAirdropIds, setLinkedAirdropIds] = useState<string[]>(initialData?.linkedAirdropIds || []);
+  const [subTasks, setSubTasks] = useState<LearningSubTask[]>(initialData?.subTasks || []);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showSubtaskForm, setShowSubtaskForm] = useState(false);
+  const [editingSubtask, setEditingSubtask] = useState<LearningSubTask | null>(null);
+  const { addToast } = useToast();
+  const { t } = useTranslation();
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim() || !content.trim()) {
+      addToast('Title and content are required', 'error');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const noteData: Omit<StrategyNote, 'id' | 'lastModified'> = {
+        title: title.trim(),
+        content: content.trim(),
+        linkedAirdropIds: linkedAirdropIds.filter(id => id.trim()),
+        subTasks: subTasks,
+      };
+
+      await onSubmit(noteData);
+      addToast(initialData ? 'Note updated successfully' : 'Note added successfully', 'success');
+      onClose();
+    } catch (error) {
+      addToast((error as Error).message || 'Failed to save note', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleAddLinkedAirdrop = () => {
+    setLinkedAirdropIds([...linkedAirdropIds, '']);
+  };
+
+  const handleRemoveLinkedAirdrop = (index: number) => {
+    setLinkedAirdropIds(linkedAirdropIds.filter((_, i) => i !== index));
+  };
+
+  const handleLinkedAirdropChange = (index: number, value: string) => {
+    const newLinkedAirdropIds = [...linkedAirdropIds];
+    newLinkedAirdropIds[index] = value;
+    setLinkedAirdropIds(newLinkedAirdropIds);
+  };
+
+  const handleAddSubtask = (subtaskData: Omit<LearningSubTask, 'id'>) => {
+    const newSubtask: LearningSubTask = {
+      ...subtaskData,
+      id: `subtask-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    };
+    setSubTasks([...subTasks, newSubtask]);
+    setShowSubtaskForm(false);
+  };
+
+  const handleUpdateSubtask = (subtaskData: Omit<LearningSubTask, 'id'>) => {
+    if (editingSubtask) {
+      const updatedSubtask: LearningSubTask = {
+        ...editingSubtask,
+        ...subtaskData,
+      };
+      setSubTasks(subTasks.map(st => st.id === editingSubtask.id ? updatedSubtask : st));
+      setEditingSubtask(null);
+    }
+  };
+
+  const handleDeleteSubtask = (subtaskId: string) => {
+    if (window.confirm('Are you sure you want to delete this subtask?')) {
+      setSubTasks(subTasks.filter(st => st.id !== subtaskId));
+      addToast('Subtask deleted successfully', 'success');
+    }
+  };
+
+  const handleToggleSubtask = (subtaskId: string) => {
+    setSubTasks(subTasks.map(st => 
+      st.id === subtaskId 
+        ? { 
+            ...st, 
+            completed: !st.completed,
+            completionDate: !st.completed ? new Date().toISOString() : undefined
+          }
+        : st
+    ));
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <div>
+        <label htmlFor="note-title" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          Title *
+        </label>
+        <Input
+          id="note-title"
+          type="text"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Enter note title"
+          required
+          className="w-full"
+        />
+      </div>
+
+      <div>
+        <label htmlFor="note-content" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          Content *
+        </label>
+        <textarea
+          id="note-content"
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          placeholder="Enter your strategy notes"
+          required
+          rows={8}
+          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          Linked Airdrops
+        </label>
+        <div className="space-y-2">
+          {linkedAirdropIds.map((airdropId, index) => (
+            <div key={index} className="flex gap-2">
+              <Input
+                type="text"
+                value={airdropId}
+                onChange={(e) => handleLinkedAirdropChange(index, e.target.value)}
+                placeholder="Enter airdrop ID or name"
+                className="flex-1"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => handleRemoveLinkedAirdrop(index)}
+                className="text-red-600 hover:text-red-700"
+              >
+                Remove
+              </Button>
+            </div>
+          ))}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleAddLinkedAirdrop}
+            leftIcon={<Plus size={16} />}
+          >
+            Add Linked Airdrop
+          </Button>
+        </div>
+      </div>
+
+      {/* Subtasks Section */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+            Subtasks ({subTasks.length})
+          </label>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setShowSubtaskForm(true)}
+            leftIcon={<Plus size={16} />}
+          >
+            Add Subtask
+          </Button>
+        </div>
+        
+        {subTasks.length > 0 && (
+          <div className="space-y-2 max-h-60 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-md p-3">
+            {subTasks.map((subtask) => (
+              <div key={subtask.id} className="flex items-center gap-3 p-2 bg-gray-50 dark:bg-gray-800 rounded-md">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleToggleSubtask(subtask.id)}
+                  className={`p-1 ${subtask.completed ? 'text-green-600' : 'text-gray-400'}`}
+                >
+                  {subtask.completed ? <CheckCheck size={16} /> : <Check size={16} />}
+                </Button>
+                <div className="flex-1 min-w-0">
+                  <div className={`font-medium ${subtask.completed ? 'line-through text-gray-500' : ''}`}>
+                    {subtask.title}
+                  </div>
+                  <div className={`text-sm ${subtask.completed ? 'text-gray-400' : 'text-gray-600 dark:text-gray-400'}`}>
+                    {subtask.description}
+                  </div>
+                  {subtask.dueDate && (
+                    <div className="text-xs text-gray-500">
+                      Due: {formatDate(subtask.dueDate)}
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setEditingSubtask(subtask)}
+                    className="p-1 text-blue-600 hover:text-blue-700"
+                  >
+                    <Edit3 size={14} />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDeleteSubtask(subtask.id)}
+                    className="p-1 text-red-600 hover:text-red-700"
+                  >
+                    <Trash2 size={14} />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="flex justify-end gap-3 pt-4">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onClose}
+          disabled={isSubmitting}
+        >
+          Cancel
+        </Button>
+        <Button
+          type="submit"
+          variant="primary"
+          disabled={isSubmitting}
+        >
+          {isSubmitting ? (
+            <div className="flex items-center">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+              Saving...
+            </div>
+          ) : (
+            initialData ? 'Update Note' : 'Add Note'
+          )}
+        </Button>
+      </div>
+
+      {/* Subtask Form Modal */}
+      <Modal 
+        isOpen={showSubtaskForm} 
+        onClose={() => setShowSubtaskForm(false)} 
+        title="Add Subtask"
+      >
+        <LearningSubTaskForm
+          onSubmit={handleAddSubtask}
+          onClose={() => setShowSubtaskForm(false)}
+        />
+      </Modal>
+
+      <Modal 
+        isOpen={!!editingSubtask} 
+        onClose={() => setEditingSubtask(null)} 
+        title="Edit Subtask"
+      >
+        {editingSubtask && (
+          <LearningSubTaskForm
+            onSubmit={handleUpdateSubtask}
+            onClose={() => setEditingSubtask(null)}
+            initialData={editingSubtask}
+          />
+        )}
+      </Modal>
+    </form>
+  );
+};
+
+export default LearningPage;

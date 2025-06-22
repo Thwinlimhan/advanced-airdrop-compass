@@ -4,8 +4,8 @@ import { Button } from '../../design-system/components/Button';
 import { Card } from '../../design-system/components/Card';
 import { AlertMessage } from '../../components/ui/AlertMessage';
 import { Brain, Loader2, AlertTriangle, CheckCircle, ShieldAlert, ShieldCheck, HelpCircle } from 'lucide-react';
-import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 import { useToast } from '../../hooks/useToast';
+import { aiService } from '../../utils/aiService';
 
 interface AirdropRiskAnalysisTabProps {
   airdrop: Airdrop;
@@ -19,7 +19,7 @@ export const AirdropRiskAnalysisTab: React.FC<AirdropRiskAnalysisTabProps> = ({ 
   const [isApiKeyMissing, setIsApiKeyMissing] = useState(false);
 
   useEffect(() => {
-    if (!process.env.API_KEY) {
+    if (!aiService.isAvailable()) {
       setIsApiKeyMissing(true);
     } else {
       setIsApiKeyMissing(false);
@@ -28,8 +28,8 @@ export const AirdropRiskAnalysisTab: React.FC<AirdropRiskAnalysisTabProps> = ({ 
 
   const handleAnalyzeRisk = async () => {
     if (isApiKeyMissing) {
-        addToast("AI Risk Analysis unavailable: API Key not configured.", "warning");
-        setError("API_KEY for AI features is not configured. This feature is unavailable.");
+        addToast(`AI Risk Analysis unavailable: ${aiService.getProviderName()} not configured.`, "warning");
+        setError(`AI Risk Analysis is unavailable because ${aiService.getProviderName()} is not configured.`);
         return;
     }
     if (airdrop.isArchived) {
@@ -41,7 +41,6 @@ export const AirdropRiskAnalysisTab: React.FC<AirdropRiskAnalysisTabProps> = ({ 
     setRiskAssessment(null);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
       const systemInstruction = `You are an AI risk analyst specializing in crypto airdrops. Analyze the provided project information for potential red flags or positive indicators regarding its legitimacy and airdrop likelihood. Consider factors like team anonymity (if mentioned or inferable), tokenomics transparency (if described), audit status (if mentioned), project maturity, community sentiment (if described), and clarity of purpose. Focus on common patterns and general project assessment. Do NOT give financial advice or predict specific airdrop success.
       Output a JSON object with the following structure:
       {
@@ -67,13 +66,10 @@ export const AirdropRiskAnalysisTab: React.FC<AirdropRiskAnalysisTabProps> = ({ 
       Current Airdrop Status (user's view): ${airdrop.myStatus}, Official Status: ${airdrop.status}
       `;
       
-      const response: GenerateContentResponse = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-preview-04-17',
-        contents: prompt,
-        config: { systemInstruction, responseMimeType: "application/json" }
-      });
-
-      let jsonStr = response.text.trim();
+      const fullPrompt = `${systemInstruction}\n\n${prompt}`;
+      let jsonStr = await aiService.generateContent(fullPrompt);
+      jsonStr = jsonStr.trim();
+      
       // It's better to rely on the model following the no-markdown instruction.
       // This regex is a fallback.
       const fenceRegex = /^```(\w*)?\s*\n?(.*?)\n?\s*```$/s;

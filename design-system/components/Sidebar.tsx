@@ -24,7 +24,7 @@ export interface SidebarProps {
   onItemClick?: (item: SidebarItem) => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = React.memo(({
+export const Sidebar: React.FC<SidebarProps> = ({
   items,
   collapsed = false,
   onCollapse,
@@ -32,9 +32,10 @@ export const Sidebar: React.FC<SidebarProps> = React.memo(({
   activeItemId,
   onItemClick,
 }) => {
-  const [expandedItem, setExpandedItem] = useState<string | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
+  const [expandedItem, setExpandedItem] = useState<string | null>(null);
+  const sectionRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   useEffect(() => {
     if (activeItemId) {
@@ -91,20 +92,29 @@ export const Sidebar: React.FC<SidebarProps> = React.memo(({
     }
   };
 
+  const setSectionRef = (itemId: string) => (el: HTMLDivElement | null) => {
+    if (el) {
+      sectionRefs.current.set(itemId, el);
+      el.style.setProperty('--expanded-height', `${el.scrollHeight}px`);
+    } else {
+      sectionRefs.current.delete(itemId);
+    }
+  };
+
+  // Update ref heights when children change
+  useEffect(() => {
+    sectionRefs.current.forEach((el, itemId) => {
+      const item = items.find(i => i.id === itemId);
+      if (item && item.children) {
+        el.style.setProperty('--expanded-height', `${el.scrollHeight}px`);
+      }
+    });
+  }, [items]);
+
   const renderSidebarItem = (item: SidebarItem, level: number = 0) => {
     const isActive = isItemActive(item);
     const isExpanded = expandedItem === item.id;
     const hasChildren = Boolean(item.children?.length);
-    const sectionRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-      if (sectionRef.current) {
-        sectionRef.current.style.setProperty(
-          '--expanded-height',
-          `${sectionRef.current.scrollHeight}px`
-        );
-      }
-    }, [item.children]);
 
     return (
       <div key={item.id} className="relative">
@@ -164,7 +174,7 @@ export const Sidebar: React.FC<SidebarProps> = React.memo(({
 
         {hasChildren && !collapsed && (
           <div
-            ref={sectionRef}
+            ref={setSectionRef(item.id)}
             className="sidebar-section"
             data-expanded={isExpanded}
           >
@@ -231,6 +241,6 @@ export const Sidebar: React.FC<SidebarProps> = React.memo(({
       )}
     </aside>
   );
-});
+};
 
 Sidebar.displayName = 'Sidebar';

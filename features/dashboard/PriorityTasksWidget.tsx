@@ -3,7 +3,7 @@ import { Card } from '../../design-system/components/Card';
 import { Button } from '../../design-system/components/Button';
 import { CheckCircle, Clock, AlertTriangle } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { useAppContext } from '../../contexts/AppContext';
+import { useRecurringTaskStore } from '../../stores/recurringTaskStore';
 import { formatRelativeDate } from '../../utils/formatting';
 
 interface PriorityTaskItem {
@@ -21,10 +21,14 @@ interface PriorityTasksWidgetProps {
 }
 
 export const PriorityTasksWidget: React.FC<PriorityTasksWidgetProps> = ({ tasks }) => {
-  const { completeRecurringTask } = useAppContext();
+  const { completeRecurringTask } = useRecurringTaskStore();
 
-  const handleCompleteRecurringTask = (taskId: string, taskName: string) => {
-    completeRecurringTask(taskId);
+  const handleCompleteRecurringTask = async (taskId: string, taskName: string) => {
+    try {
+      await completeRecurringTask(taskId);
+    } catch (error) {
+      console.error('Failed to complete recurring task:', error);
+    }
   };
 
   let mainContent;

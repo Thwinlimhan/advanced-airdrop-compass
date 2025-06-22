@@ -8,10 +8,10 @@ import { PlusCircle, SortAsc, SortDesc, Filter, CheckSquare, Square, Brain, Load
 import { Select } from '../../design-system/components/Select';
 import { Input } from '../../design-system/components/Input';
 import { BatchEditAirdropTasksModal } from './BatchEditAirdropTasksModal';
-import { useAppContext } from '../../contexts/AppContext';
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 import { useToast } from '../../hooks/useToast';
 import { AlertMessage } from '../../components/ui/AlertMessage';
+import { useWalletStore } from '../../stores/walletStore';
 
 interface TaskChecklistProps {
   airdropId: string;
@@ -39,7 +39,7 @@ export const TaskChecklist: React.FC<TaskChecklistProps> = ({
   onOpenTimerModal,
   onOpenSuggestionModal 
 }) => {
-  const { getRecentWalletLogs } = useAppContext();
+  const { getRecentWalletLogs } = useWalletStore();
   const { addToast } = useToast();
   
   const [filterText, setFilterText] = useState('');

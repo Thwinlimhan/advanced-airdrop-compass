@@ -1,276 +1,442 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Modal } from '../../design-system/components/Modal';
 import { Button } from '../../design-system/components/Button';
 import { Input } from '../../design-system/components/Input';
 import { Textarea } from '../../design-system/components/Textarea';
 import { Select } from '../../design-system/components/Select';
-import { AirdropTask, Wallet, GasLogEntry, Airdrop, AirdropStatus } from '../../types'; 
-import { useAppContext } from '../../contexts/AppContext';
-import { XCircle, PlusCircle } from 'lucide-react';
+import { Card, CardHeader, CardContent } from '../../design-system/components/Card';
+import { SubtaskChecklist } from '../tasks/SubtaskChecklist';
+import { useWalletStore } from '../../stores/walletStore';
+import { useToast } from '../../hooks/useToast';
+import { useTranslation } from '../../hooks/useTranslation';
+import { 
+  Calendar, 
+  Link, 
+  Wallet, 
+  DollarSign, 
+  Clock, 
+  FileText, 
+  CheckSquare, 
+  ChevronDown, 
+  ChevronRight,
+  Info,
+  AlertCircle,
+  Plus,
+  X
+} from 'lucide-react';
+
+interface TaskFormData {
+  description: string;
+  dueDate: string;
+  webLink: string;
+  walletId: string;
+  cost: string;
+  timeSpent: string;
+  notes: string;
+  subtasks: Array<{
+    id: string;
+    description: string;
+    completed: boolean;
+  }>;
+}
+
+interface TaskFormErrors {
+  description?: string;
+  dueDate?: string;
+  webLink?: string;
+  cost?: string;
+  timeSpent?: string;
+}
 
 interface TaskFormModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (taskData: Partial<AirdropTask>, parentId?: string) => void;
-  initialData?: AirdropTask;
-  parentId?: string;
-  wallets: Wallet[];
-  allAirdropTasksForDependencies: AirdropTask[]; 
-  currentAirdropId: string;
-  allAirdropsSystemWide: Airdrop[]; 
+  onSubmit: (task: TaskFormData) => void;
+  initialTask?: Partial<TaskFormData>;
+  mode?: 'create' | 'edit';
+  airdropId?: string;
 }
 
 export const TaskFormModal: React.FC<TaskFormModalProps> = ({
   isOpen,
   onClose,
   onSubmit,
-  initialData,
-  parentId,
-  wallets,
-  allAirdropTasksForDependencies,
-  currentAirdropId,
-  allAirdropsSystemWide,
+  initialTask = {},
+  mode = 'create',
+  airdropId
 }) => {
-  const { appData } = useAppContext(); 
-  const [description, setDescription] = useState('');
-  const [associatedWalletId, setAssociatedWalletId] = useState<string | undefined>(undefined);
-  const [dueDate, setDueDate] = useState<string | undefined>(undefined);
-  const [notes, setNotes] = useState<string | undefined>(undefined);
-  const [timeSpentMinutes, setTimeSpentMinutes] = useState<number | undefined>(undefined);
-  const [cost, setCost] = useState<string | undefined>(undefined);
-  const [linkedGasLogId, setLinkedGasLogId] = useState<string | undefined>(undefined);
-  const [dependsOnTaskIds, setDependsOnTaskIds] = useState<string[]>([]);
-  const [dependsOnAirdropMyStatusCompleted, setDependsOnAirdropMyStatusCompleted] = useState<string | undefined>(undefined);
-  const [errors, setErrors] = useState<{ description?: string }>({});
+  const { wallets } = useWalletStore();
+  const { addToast } = useToast();
+  const { t } = useTranslation();
 
-  const availableGasLogs = useMemo(() => {
-    if (!associatedWalletId) return [];
-    const wallet = wallets.find(w => w.id === associatedWalletId);
-    return wallet?.gasLogs || [];
-  }, [associatedWalletId, wallets]);
+  const [formData, setFormData] = useState<TaskFormData>({
+    description: '',
+    dueDate: '',
+    webLink: '',
+    walletId: '',
+    cost: '',
+    timeSpent: '',
+    notes: '',
+    subtasks: [],
+    ...initialTask
+  });
 
+  const [errors, setErrors] = useState<TaskFormErrors>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  // Reset form when modal opens/closes
   useEffect(() => {
-    if (isOpen) { // Only reset/initialize when modal becomes visible or initialData changes
-        if (initialData) {
-            setDescription(initialData.description);
-            setAssociatedWalletId(initialData.associatedWalletId);
-            setDueDate(initialData.dueDate ? new Date(initialData.dueDate).toISOString().split('T')[0] : undefined);
-            setNotes(initialData.notes);
-            setTimeSpentMinutes(initialData.timeSpentMinutes);
-            setCost(initialData.cost);
-            setLinkedGasLogId(initialData.linkedGasLogId);
-            setDependsOnTaskIds(initialData.dependsOnTaskIds || []);
-            setDependsOnAirdropMyStatusCompleted(initialData.dependsOnAirdropMyStatusCompleted || undefined);
-        } else {
-            setDescription('');
-            setAssociatedWalletId(undefined);
-            setDueDate(undefined);
-            setNotes(undefined);
-            setTimeSpentMinutes(undefined);
-            setCost(undefined);
-            setLinkedGasLogId(undefined);
-            setDependsOnTaskIds([]);
-            setDependsOnAirdropMyStatusCompleted(undefined);
-        }
-        setErrors({}); // Clear errors when modal opens or data changes
+    if (isOpen) {
+      setFormData({
+        description: '',
+        dueDate: '',
+        webLink: '',
+        walletId: '',
+        cost: '',
+        timeSpent: '',
+        notes: '',
+        subtasks: [],
+        ...initialTask
+      });
+      setErrors({});
+      setShowAdvanced(false);
     }
-  }, [initialData, isOpen]);
+  }, [isOpen, initialTask]);
 
-  const validate = (): boolean => {
-    const newErrors: { description?: string } = {};
-    if (!description.trim()) newErrors.description = 'Task description is required.';
+  // Inline validation
+  const validateField = (field: keyof TaskFormData, value: string) => {
+    switch (field) {
+      case 'description':
+        if (!value.trim()) return 'Description is required';
+        if (value.trim().length < 3) return 'Description must be at least 3 characters';
+        break;
+      case 'dueDate':
+        if (value && new Date(value) < new Date()) {
+          return 'Due date cannot be in the past';
+        }
+        break;
+      case 'webLink':
+        if (value && !isValidUrl(value)) {
+          return 'Please enter a valid URL';
+        }
+        break;
+      case 'cost':
+        if (value && (isNaN(Number(value)) || Number(value) < 0)) {
+          return 'Cost must be a positive number';
+        }
+        break;
+      case 'timeSpent':
+        if (value && (isNaN(Number(value)) || Number(value) < 0)) {
+          return 'Time spent must be a positive number';
+        }
+        break;
+    }
+    return '';
+  };
+
+  const isValidUrl = (string: string) => {
+    try {
+      new URL(string);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
+
+  const handleFieldChange = (field: keyof TaskFormData, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+    
+    // Clear error when user starts typing
+    if (errors[field as keyof TaskFormErrors]) {
+      setErrors(prev => ({ ...prev, [field]: undefined }));
+    }
+    
+    // Validate field
+    const error = validateField(field, value);
+    if (error) {
+      setErrors(prev => ({ ...prev, [field]: error }));
+    }
+  };
+
+  const validateForm = (): boolean => {
+    const newErrors: TaskFormErrors = {};
+    
+    // Validate required fields
+    const descriptionError = validateField('description', formData.description);
+    if (descriptionError) newErrors.description = descriptionError;
+    
+    // Validate optional fields if they have values
+    if (formData.dueDate) {
+      const dueDateError = validateField('dueDate', formData.dueDate);
+      if (dueDateError) newErrors.dueDate = dueDateError;
+    }
+    
+    if (formData.webLink) {
+      const webLinkError = validateField('webLink', formData.webLink);
+      if (webLinkError) newErrors.webLink = webLinkError;
+    }
+    
+    if (formData.cost) {
+      const costError = validateField('cost', formData.cost);
+      if (costError) newErrors.cost = costError;
+    }
+    
+    if (formData.timeSpent) {
+      const timeSpentError = validateField('timeSpent', formData.timeSpent);
+      if (timeSpentError) newErrors.timeSpent = timeSpentError;
+    }
+    
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (validate()) {
-      const taskData: Partial<AirdropTask> = {
-        description: description.trim(),
-        associatedWalletId: associatedWalletId || undefined,
-        dueDate: dueDate || undefined,
-        notes: notes?.trim() || undefined,
-        timeSpentMinutes: timeSpentMinutes !== undefined ? Number(timeSpentMinutes) : undefined,
-        cost: cost?.trim() || undefined,
-        linkedGasLogId: linkedGasLogId || undefined,
-        dependsOnTaskIds: dependsOnTaskIds,
-        dependsOnAirdropMyStatusCompleted: dependsOnAirdropMyStatusCompleted || undefined,
-        completed: initialData?.completed || false, 
-      };
-      if (initialData?.id) {
-        taskData.id = initialData.id;
-      }
-      if (parentId && !initialData?.id) { // Only set parentId for new sub-tasks
-        taskData.parentId = parentId;
-      }
-      
-      onSubmit(taskData, parentId && !initialData?.id ? parentId : initialData?.parentId);
-      // onClose(); // Parent component will close after successful submission from context
+    
+    if (!validateForm()) {
+      addToast('Please fix the errors in the form', 'error');
+      return;
+    }
+    
+    setIsSubmitting(true);
+    try {
+      await onSubmit(formData);
+      addToast(`Task ${mode === 'create' ? 'created' : 'updated'} successfully!`, 'success');
+      onClose();
+    } catch (error) {
+      addToast(`Failed to ${mode === 'create' ? 'create' : 'update'} task`, 'error');
+    } finally {
+      setIsSubmitting(false);
     }
   };
-  
-  const dependencyOptions = useMemo(() => {
-    const options: { value: string, label: string, disabled?: boolean }[] = [];
-    const currentEditingTaskId = initialData?.id;
-    let descendantIds: string[] = [];
-
-    const getDescendantIdsRecursive = (taskId: string | undefined, tasks: AirdropTask[]): string[] => {
-      const descendants: string[] = [];
-      for (const task of tasks) {
-        if (task.id === taskId) {
-          if (task.subTasks) {
-            task.subTasks.forEach(subTask => {
-              descendants.push(subTask.id);
-              descendants.push(...getDescendantIdsRecursive(subTask.id, task.subTasks!));
-            });
-          }
-          break;
-        }
-        if (task.subTasks) {
-          descendants.push(...getDescendantIdsRecursive(taskId, task.subTasks));
-        }
-      }
-      return descendants;
-    };
-    
-    if (currentEditingTaskId) {
-        descendantIds = getDescendantIdsRecursive(currentEditingTaskId, allAirdropTasksForDependencies);
-    }
-
-
-    const processTasksForOptions = (tasks: AirdropTask[], prefix: string = ''): { value: string; label: string }[] => {
-      const options: { value: string; label: string }[] = [];
-      tasks.forEach(task => {
-        const label = prefix + task.description;
-        options.push({ value: task.id, label });
-        if (task.subTasks && task.subTasks.length > 0) {
-          options.push(...processTasksForOptions(task.subTasks, prefix + '  '));
-        }
-      });
-      return options;
-    };
-    processTasksForOptions(allAirdropTasksForDependencies);
-    
-    return options;
-  }, [allAirdropTasksForDependencies, initialData, parentId]);
-
-  const prerequisiteAirdropOptions = useMemo(() => {
-    return [
-      { value: '', label: 'None' },
-      ...allAirdropsSystemWide
-        .filter(ad => ad.id !== currentAirdropId) 
-        .map(ad => ({ value: ad.id, label: ad.projectName }))
-    ];
-  }, [allAirdropsSystemWide, currentAirdropId]);
-
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={initialData ? 'Edit Task' : (parentId ? 'Add Sub-task' : 'Add New Task')} size="lg">
-      <form onSubmit={handleSubmit} className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
-        <Textarea
-          id="taskDescription"
-          label="Task Description"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          error={errors.description}
-          required
-          rows={3}
-          placeholder="e.g., Swap on main DEX, Bridge ETH to Arbitrum"
-        />
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Input
-            id="taskDueDate"
-            label="Due Date (Optional)"
-            type="date"
-            value={dueDate || ''}
-            onChange={(e) => setDueDate(e.target.value)}
-          />
-          <Select
-            id="taskAssociatedWallet"
-            label="Associated Wallet (Optional)"
-            value={associatedWalletId || ''}
-            onChange={(e) => {
-                setAssociatedWalletId(e.target.value || undefined);
-                setLinkedGasLogId(undefined); 
-            }}
-            options={[{ value: '', label: 'None' }, ...wallets.map(w => ({ value: w.id, label: `${w.name} (${w.address.substring(0,6)}...${w.address.substring(w.address.length-4)})` }))]}
-          />
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Input
-                id="taskTimeSpent"
-                label="Time Spent (Minutes, Optional)"
-                type="number"
-                value={timeSpentMinutes === undefined ? '' : timeSpentMinutes.toString()}
-                onChange={(e) => setTimeSpentMinutes(e.target.value === '' ? undefined : parseInt(e.target.value))}
-                min="0"
-                placeholder="e.g., 30"
-            />
-            <Input
-                id="taskCost"
-                label="Direct Cost (Optional, e.g., mint fee)"
-                value={cost || ''}
-                onChange={(e) => setCost(e.target.value)}
-                placeholder="e.g., 0.01 ETH or $5"
-            />
-        </div>
-         <Select
-            id="taskLinkedGasLog"
-            label="Link to General Gas Log (Optional)"
-            value={linkedGasLogId || ''}
-            onChange={(e) => setLinkedGasLogId(e.target.value || undefined)}
-            disabled={!associatedWalletId || availableGasLogs.length === 0}
-            options={[
-                { value: '', label: availableGasLogs.length === 0 && associatedWalletId ? 'No gas logs for selected wallet' : (associatedWalletId ? 'None' : 'Select a wallet first') },
-                ...availableGasLogs.map(log => ({
-                    value: log.id,
-                    label: `${new Date(log.date).toLocaleDateString()}: ${log.amount} ${log.currency} (${log.description || 'Gas'}) on ${log.network || 'N/A'}`
-                }))
-            ]}
-        />
-        
-        <div>
-            <label htmlFor="taskDependencies" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Depends On Other Tasks (Optional)
-            </label>
-            <select
-                id="taskDependencies"
-                multiple
-                value={dependsOnTaskIds}
-                onChange={(e) => setDependsOnTaskIds(Array.from(e.target.selectedOptions, option => option.value))}
-                className="block w-full h-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-primary dark:focus:ring-primary focus:border-primary dark:focus:border-primary sm:text-sm bg-white dark:bg-card-dark text-text-light dark:text-muted-dark"
-            >
-                {dependencyOptions.map(opt => (
-                    <option key={opt.value} value={opt.value} disabled={opt.disabled}>
-                        {opt.label}{opt.disabled ? ' (Cannot select self/child/parent)' : ''}
-                    </option>
-                ))}
-            </select>
-             <p className="text-xs text-muted-light dark:text-muted-dark mt-1">Select tasks within *this* airdrop that must be completed before this one. Cannot depend on self, children or parent (if adding sub-task).</p>
-        </div>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={`${mode === 'create' ? 'Create' : 'Edit'} Task`}
+      size="lg"
+    >
+      <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Task Details Section */}
+        <Card variant="default" padding="md">
+          <CardHeader>
+            <h3 className="text-lg font-semibold flex items-center gap-2">
+              <FileText className="h-5 w-5 text-blue-600" />
+              Task Details
+            </h3>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Description *
+                </label>
+                <Textarea
+                  value={formData.description}
+                  onChange={(e) => handleFieldChange('description', e.target.value)}
+                  placeholder="Describe what needs to be done..."
+                  className={errors.description ? 'border-red-500' : ''}
+                  rows={3}
+                />
+                {errors.description && (
+                  <div className="flex items-center mt-1 text-sm text-red-600">
+                    <AlertCircle className="h-4 w-4 mr-1" />
+                    {errors.description}
+                  </div>
+                )}
+              </div>
 
-        <Select
-            id="taskAirdropDependency"
-            label="Prerequisite Airdrop Completion (Optional)"
-            value={dependsOnAirdropMyStatusCompleted || ''}
-            onChange={(e) => setDependsOnAirdropMyStatusCompleted(e.target.value || undefined)}
-            options={prerequisiteAirdropOptions}
-        />
-         <p className="text-xs text-muted-light dark:text-muted-dark -mt-3 mb-2">This task will be blocked until the selected airdrop is marked as 'Completed' in 'My Status'.</p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Due Date
+                </label>
+                <div className="relative">
+                  <Input
+                    type="date"
+                    value={formData.dueDate}
+                    onChange={(e) => handleFieldChange('dueDate', e.target.value)}
+                    className={errors.dueDate ? 'border-red-500' : ''}
+                  />
+                  <Calendar className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                </div>
+                {errors.dueDate && (
+                  <div className="flex items-center mt-1 text-sm text-red-600">
+                    <AlertCircle className="h-4 w-4 mr-1" />
+                    {errors.dueDate}
+                  </div>
+                )}
+              </div>
 
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Web Link
+                </label>
+                <div className="relative">
+                  <Input
+                    type="url"
+                    value={formData.webLink}
+                    onChange={(e) => handleFieldChange('webLink', e.target.value)}
+                    placeholder="https://project.com"
+                    className={errors.webLink ? 'border-red-500' : ''}
+                  />
+                  <Link className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                </div>
+                <div className="flex items-center mt-1 text-xs text-gray-500">
+                  <Info className="h-3 w-3 mr-1" />
+                  Optional. Link to project page or instructions.
+                </div>
+                {errors.webLink && (
+                  <div className="flex items-center mt-1 text-sm text-red-600">
+                    <AlertCircle className="h-4 w-4 mr-1" />
+                    {errors.webLink}
+                  </div>
+                )}
+              </div>
 
-        <Textarea
-          id="taskNotes"
-          label="Notes (Optional)"
-          value={notes || ''}
-          onChange={(e) => setNotes(e.target.value)}
-          rows={3}
-          placeholder="e.g., Specific requirements, links to guides"
-        />
-        <div className="flex justify-end space-x-2 pt-3 sticky bottom-0 bg-card-light dark:bg-card-dark py-3">
-          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-          <Button type="submit">{initialData ? 'Save Changes' : 'Add Task'}</Button>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Associated Wallet
+                </label>
+                <Select
+                  value={formData.walletId}
+                  onValueChange={(value) => handleFieldChange('walletId', value)}
+                  options={[
+                    { value: '', label: 'Select a wallet' },
+                    ...wallets.map(wallet => ({
+                      value: wallet.id,
+                      label: `${wallet.name} (${wallet.blockchain})`
+                    }))
+                  ]}
+                />
+                <div className="flex items-center mt-1 text-xs text-gray-500">
+                  <Info className="h-3 w-3 mr-1" />
+                  Choose the wallet for this task.
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Tracking Section */}
+        <Card variant="default" padding="md">
+          <CardHeader>
+            <h3 className="text-lg font-semibold flex items-center gap-2">
+              <Clock className="h-5 w-5 text-green-600" />
+              Tracking
+            </h3>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Estimated Cost (USD)
+                </label>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    value={formData.cost}
+                    onChange={(e) => handleFieldChange('cost', e.target.value)}
+                    placeholder="0.00"
+                    step="0.01"
+                    min="0"
+                    className={errors.cost ? 'border-red-500' : ''}
+                  />
+                  <DollarSign className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                </div>
+                {errors.cost && (
+                  <div className="flex items-center mt-1 text-sm text-red-600">
+                    <AlertCircle className="h-4 w-4 mr-1" />
+                    {errors.cost}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Time Spent (minutes)
+                </label>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    value={formData.timeSpent}
+                    onChange={(e) => handleFieldChange('timeSpent', e.target.value)}
+                    placeholder="0"
+                    min="0"
+                    className={errors.timeSpent ? 'border-red-500' : ''}
+                  />
+                  <Clock className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                </div>
+                {errors.timeSpent && (
+                  <div className="flex items-center mt-1 text-sm text-red-600">
+                    <AlertCircle className="h-4 w-4 mr-1" />
+                    {errors.timeSpent}
+                  </div>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Notes & Subtasks Section */}
+        <Card variant="default" padding="md">
+          <CardHeader>
+            <h3 className="text-lg font-semibold flex items-center gap-2">
+              <CheckSquare className="h-5 w-5 text-purple-600" />
+              Notes & Subtasks
+            </h3>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Notes
+              </label>
+              <Textarea
+                value={formData.notes}
+                onChange={(e) => handleFieldChange('notes', e.target.value)}
+                placeholder="Any additional notes or context..."
+                rows={3}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Subtasks
+              </label>
+              <SubtaskChecklist
+                subtasks={formData.subtasks}
+                onChange={(subtasks) => setFormData(prev => ({ ...prev, subtasks }))}
+                placeholder="Add a subtask..."
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Actions */}
+        <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onClose}
+            disabled={isSubmitting}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={isSubmitting || !formData.description.trim()}
+          >
+            {isSubmitting ? (
+              <div className="flex items-center">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                Saving...
+              </div>
+            ) : (
+              `${mode === 'create' ? 'Create' : 'Update'} Task`
+            )}
+          </Button>
         </div>
       </form>
     </Modal>

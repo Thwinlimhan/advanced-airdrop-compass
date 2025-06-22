@@ -1,556 +1,625 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { PageWrapper } from '../../components/layout/PageWrapper';
-import { Card } from '../../design-system/components/Card';
-import { useAppContext } from '../../contexts/AppContext';
-import { Airdrop, AirdropTask, ReportTimeAnalysisItem, ReportCostAnalysisItem, Wallet, CostByCategoryItem, CostByNetworkItem, CostByWalletItem } from '../../types';
-import { BarChart3, Clock, DollarSign, Briefcase, PieChart, Layers, Network, WalletCards as WalletIcon } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
-import { parseMonetaryValue, formatMinutesToHoursAndMinutes, formatCurrency } from '../../utils/formatting';
+import { Card, CardHeader, CardContent } from '../../design-system/components/Card';
 import { Button } from '../../design-system/components/Button';
-import { EnhancedBarChart as BarChart } from '../../components/charts/BarChart';
-import { ChartData } from 'chart.js';
-import { DISTINCT_COLORS, CATEGORY_COLORS, NETWORK_COLORS } from '../../constants';
-import { CostDetailModal } from './CostDetailModal';
-
-const calculateAirdropTimes = (airdrops: Airdrop[]): ReportTimeAnalysisItem[] => {
-  return airdrops.map(airdrop => {
-    let totalMinutes = (airdrop.timeSpentHours || 0) * 60;
-    const sumTaskTime = (tasks: AirdropTask[]): number => {
-      return tasks.reduce((sum, task) => {
-        let currentTaskTime = sum + (task.timeSpentMinutes || 0);
-        if (task.subTasks && task.subTasks.length > 0) {
-          currentTaskTime += sumTaskTime(task.subTasks);
-        }
-        return currentTaskTime;
-      }, 0);
-    };
-    totalMinutes += sumTaskTime(airdrop.tasks);
-    return {
-      airdropId: airdrop.id,
-      airdropName: airdrop.projectName,
-      totalTimeMinutes: totalMinutes,
-    };
-  }).filter(item => item.totalTimeMinutes > 0)
-    .sort((a,b) => b.totalTimeMinutes - a.totalTimeMinutes);
-};
-
-const parseAirdropPotential = (potential: string): number => {
-    if (!potential) return 0;
-    const potentialLower = potential.toLowerCase();
-    
-    const monetaryMatch = potentialLower.match(/(\$?\s*\d{1,3}(?:,\d{3})*(?:\.\d+)?|\d+\s*usd)/);
-    if (monetaryMatch && monetaryMatch[0]) {
-        return parseMonetaryValue(monetaryMatch[0]);
-    }
-
-    if (potentialLower.includes('very high') || potentialLower.includes('veryhigh')) return 1000;
-    if (potentialLower.includes('high')) return 500;
-    if (potentialLower.includes('medium')) return 250;
-    if (potentialLower.includes('low')) return 50;
-    
-    return 0;
-};
-
-
-const calculateAirdropCostsAndPotential = (airdrops: Airdrop[], wallets: Wallet[]): ReportCostAnalysisItem[] => {
-  return airdrops.map(airdrop => {
-    let gasCost = 0;
-    let transactionCost = airdrop.transactions.reduce((sum, tx) => sum + parseMonetaryValue(tx.cost), 0);
-    let taskCost = 0;
-
-    const sumTaskSpecificCosts = (tasks: AirdropTask[]): void => {
-      tasks.forEach(task => {
-        taskCost += parseMonetaryValue(task.cost);
-        if (task.linkedGasLogId && task.associatedWalletId) {
-          const wallet = wallets.find(w => w.id === task.associatedWalletId);
-          const gasLog = wallet?.gasLogs?.find(gl => gl.id === task.linkedGasLogId);
-          if (gasLog) {
-            gasCost += parseMonetaryValue(gasLog.amount); 
-          }
-        }
-        if (task.subTasks && task.subTasks.length > 0) {
-          sumTaskSpecificCosts(task.subTasks);
-        }
-      });
-    };
-    sumTaskSpecificCosts(airdrop.tasks);
-    
-    const totalCost = gasCost + transactionCost + taskCost;
-    const potentialRewardValue = parseAirdropPotential(airdrop.potential);
-    const netPotential = potentialRewardValue - totalCost;
-
-
-    return {
-      airdropId: airdrop.id,
-      airdropName: airdrop.projectName,
-      totalCost,
-      gasCost,
-      transactionCost,
-      taskCost,
-      potentialRewardValue,
-      netPotential,
-    };
-  }).filter(item => item.totalCost > 0 || item.potentialRewardValue > 0)
-    .sort((a,b) => b.netPotential - a.netPotential);
-};
-
-type ReportTab = 'cost_roi' | 'time' | 'cost_analyzer';
-
+import { Select } from '../../design-system/components/Select';
+import { useAirdropStore } from '../../stores/airdropStore';
+import { useWalletStore } from '../../stores/walletStore';
+import { useYieldPositionStore } from '../../stores/yieldPositionStore';
+import { Airdrop, Wallet, YieldPosition } from '../../types';
+import { 
+  BarChart3, 
+  TrendingUp, 
+  DollarSign, 
+  Clock, 
+  Target,
+  Download,
+  Filter,
+  RefreshCw,
+  Calendar,
+  PieChart,
+  Activity,
+  TrendingDown,
+  Users,
+  Star,
+  FileText,
+  AlertCircle,
+  Info,
+  ExternalLink
+} from 'lucide-react';
+import { useToast } from '../../hooks/useToast';
+import { useTranslation } from '../../hooks/useTranslation';
 
 export const ReportsPage: React.FC = () => {
-  const { appData } = useAppContext();
-  const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<ReportTab>('cost_roi');
+  const { airdrops } = useAirdropStore();
+  const { wallets } = useWalletStore();
+  const { yieldPositions } = useYieldPositionStore();
+  const { addToast } = useToast();
+  const { t } = useTranslation();
 
-  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
-  const [detailModalTitle, setDetailModalTitle] = useState('');
-  const [detailModalItems, setDetailModalItems] = useState<any[]>([]); // Using 'any' for simplicity, ideally type this
-  const [detailModalItemType, setDetailModalItemType] = useState<'category'|'network'|'wallet'>('category');
+  const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d' | '1y' | 'all'>('30d');
+  const [selectedBlockchain, setSelectedBlockchain] = useState<string>('all');
+  const [reportType, setReportType] = useState<'overview' | 'time' | 'cost' | 'performance'>('overview');
+  const [exportFormat, setExportFormat] = useState<'json' | 'csv' | 'pdf'>('json');
 
+  // Data validation and sanitization
+  const validatedAirdrops = useMemo(() => {
+    return airdrops.map(airdrop => ({
+      ...airdrop,
+      projectName: airdrop.projectName || 'Unnamed Project',
+      blockchain: airdrop.blockchain || 'Unknown',
+      myStatus: airdrop.myStatus || 'Not Started',
+      potential: airdrop.potential || 'Unknown',
+      timeSpentHours: Math.max(0, airdrop.timeSpentHours || 0),
+      tasks: airdrop.tasks || [],
+      transactions: airdrop.transactions || [],
+      claimedTokens: airdrop.claimedTokens || [],
+      notes: airdrop.notes || '',
+      description: airdrop.description || ''
+    }));
+  }, [airdrops]);
 
-  const timeAnalysisData = useMemo(() => calculateAirdropTimes(appData.airdrops), [appData.airdrops]);
-  const costAndPotentialData = useMemo(() => calculateAirdropCostsAndPotential(appData.airdrops, appData.wallets), [appData.airdrops, appData.wallets]);
+  const validatedWallets = useMemo(() => {
+    return wallets.map(wallet => ({
+      ...wallet,
+      name: wallet.name || 'Unnamed Wallet',
+      address: wallet.address || 'No address',
+      blockchain: wallet.blockchain || 'Unknown',
+      group: wallet.group || 'No group',
+      balanceSnapshots: wallet.balanceSnapshots || [],
+      gasLogs: wallet.gasLogs || [],
+      interactionLogs: wallet.interactionLogs || [],
+      nftPortfolio: wallet.nftPortfolio || []
+    }));
+  }, [wallets]);
 
-  const overallCosts = useMemo(() => {
-    let total = 0;
-    appData.wallets.forEach(wallet => {
-        (wallet.gasLogs || []).forEach(log => total += parseMonetaryValue(log.amount)); 
-        (wallet.interactionLogs || []).forEach(log => total += parseMonetaryValue(log.cost));
-    });
-    appData.airdrops.forEach(airdrop => {
-        airdrop.transactions.forEach(tx => total += parseMonetaryValue(tx.cost));
-        const sumTaskCosts = (tasks: AirdropTask[]): void => {
-            tasks.forEach(task => {
-                total += parseMonetaryValue(task.cost);
-                if (task.subTasks) sumTaskCosts(task.subTasks);
-            });
-        };
-        sumTaskCosts(airdrop.tasks);
-    });
-    return total;
-  }, [appData]);
+  const validatedYieldPositions = useMemo(() => {
+    return yieldPositions.map(position => ({
+      ...position,
+      platformName: position.platformName || 'Unknown Platform',
+      assetSymbol: position.assetSymbol || 'Unknown Asset',
+      currentApy: Math.max(0, position.currentApy || 0),
+      amountStaked: Math.max(0, position.amountStaked || 0),
+      currentValue: Math.max(0, position.currentValue || 0)
+    }));
+  }, [yieldPositions]);
 
-  const costsByCategory = useMemo((): CostByCategoryItem[] => {
-    const categories: Record<string, { totalCost: number, count: number }> = {};
-    const defaultCategory = 'Uncategorized';
+  // Calculate report data with validation
+  const calculatedReportData = useMemo(() => {
+    const totalAirdrops = validatedAirdrops.length;
+    const activeAirdrops = validatedAirdrops.filter(a => a.myStatus === 'In Progress').length;
+    const completedAirdrops = validatedAirdrops.filter(a => a.myStatus === 'Completed').length;
+    const totalWallets = validatedWallets.length;
+    const totalYieldPositions = validatedYieldPositions.length;
 
-    appData.airdrops.forEach(airdrop => {
-        airdrop.transactions.forEach(tx => {
-            const category = tx.category || defaultCategory;
-            if (!categories[category]) categories[category] = { totalCost: 0, count: 0 };
-            categories[category].totalCost += parseMonetaryValue(tx.cost);
-            categories[category].count++;
-        });
-    });
-    appData.wallets.forEach(wallet => {
-        (wallet.interactionLogs || []).forEach(log => {
-            const category = log.category || log.type || defaultCategory; 
-             if (!categories[category]) categories[category] = { totalCost: 0, count: 0 };
-            categories[category].totalCost += parseMonetaryValue(log.cost);
-            categories[category].count++;
-        });
-        (wallet.gasLogs || []).forEach(log => {
-            const category = log.description && log.description.toLowerCase().includes('gas') ? 'Gas Fee' : (log.description || 'Gas Fee');
-            if (!categories[category]) categories[category] = { totalCost: 0, count: 0 };
-            categories[category].totalCost += parseMonetaryValue(log.amount);
-            categories[category].count++;
-        });
-    });
-     return Object.entries(categories).map(([category, data]) => ({category, ...data})).sort((a,b) => b.totalCost - a.totalCost);
-  }, [appData]);
+    const totalTimeSpent = validatedAirdrops.reduce((sum, a) => sum + a.timeSpentHours, 0);
+    const averageTimePerAirdrop = totalAirdrops > 0 ? totalTimeSpent / totalAirdrops : 0;
 
+    const totalTasks = validatedAirdrops.reduce((sum, a) => sum + a.tasks.length, 0);
+    const completedTasks = validatedAirdrops.reduce((sum, a) => sum + a.tasks.filter(t => t.completed).length, 0);
+    const taskCompletionRate = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
 
-  const costsByNetwork = useMemo((): CostByNetworkItem[] => {
-    const networks: Record<string, { totalCost: number, count: number }> = {};
-    const defaultNetwork = 'Unknown/Other';
+    const totalTransactions = validatedAirdrops.reduce((sum, a) => sum + a.transactions.length, 0);
+    const totalClaimedTokens = validatedAirdrops.filter(a => a.claimedTokens.length > 0).length;
 
-    appData.wallets.forEach(wallet => {
-        (wallet.gasLogs || []).forEach(log => {
-            const network = log.network || wallet.blockchain || defaultNetwork;
-            if (!networks[network]) networks[network] = { totalCost: 0, count: 0 };
-            networks[network].totalCost += parseMonetaryValue(log.amount);
-            networks[network].count++;
-        });
-        (wallet.interactionLogs || []).forEach(log => {
-            const network = log.network || wallet.blockchain || defaultNetwork;
-             if (!networks[network]) networks[network] = { totalCost: 0, count: 0 };
-            networks[network].totalCost += parseMonetaryValue(log.cost);
-            networks[network].count++;
-        });
-    });
-     appData.airdrops.forEach(airdrop => {
-        airdrop.transactions.forEach(tx => {
-            const network = airdrop.blockchain || defaultNetwork; 
-            if (!networks[network]) networks[network] = { totalCost: 0, count: 0 };
-            networks[network].totalCost += parseMonetaryValue(tx.cost);
-            networks[network].count++;
-        });
-         const sumTaskCosts = (tasks: AirdropTask[]): void => {
-            tasks.forEach(task => {
-                const cost = parseMonetaryValue(task.cost);
-                if (cost > 0) {
-                    const network = airdrop.blockchain || defaultNetwork;
-                    if(!networks[network]) networks[network] = {totalCost: 0, count: 0};
-                    networks[network].totalCost += cost;
-                    networks[network].count++;
-                }
-                if (task.subTasks) sumTaskCosts(task.subTasks);
-            });
-        };
-        sumTaskCosts(airdrop.tasks);
-    });
-    return Object.entries(networks).map(([network, data]) => ({network, ...data})).sort((a,b) => b.totalCost - a.totalCost);
-  }, [appData]);
+    // Calculate costs with validation
+    const totalGasCosts = validatedAirdrops.reduce((sum, a) => {
+      return sum + a.transactions.reduce((txSum, tx) => {
+        const cost = parseFloat(tx.cost?.toString() || '0') || 0;
+        return txSum + cost;
+      }, 0);
+    }, 0);
 
-  const costsByWallet = useMemo((): CostByWalletItem[] => {
-    const walletsMap: Record<string, CostByWalletItem> = {};
-    appData.wallets.forEach(wallet => {
-        if(!walletsMap[wallet.id]) walletsMap[wallet.id] = { walletId: wallet.id, walletName: wallet.name, totalCost: 0, count: 0};
-        
-        (wallet.gasLogs || []).forEach(log => {
-            walletsMap[wallet.id].totalCost += parseMonetaryValue(log.amount);
-            walletsMap[wallet.id].count++;
-        });
-        (wallet.interactionLogs || []).forEach(log => {
-            walletsMap[wallet.id].totalCost += parseMonetaryValue(log.cost);
-            walletsMap[wallet.id].count++;
-        });
-    });
-    appData.airdrops.forEach(ad => {
-        const processTasks = (tasks: AirdropTask[]) => {
-            tasks.forEach(task => {
-                if (task.associatedWalletId) {
-                    if(!walletsMap[task.associatedWalletId]) {
-                        const w = appData.wallets.find(wal => wal.id === task.associatedWalletId);
-                        if (w) walletsMap[task.associatedWalletId] = {walletId: w.id, walletName: w.name, totalCost: 0, count: 0};
-                    }
-                    if(walletsMap[task.associatedWalletId]){
-                        // Only count task.cost if NOT linked to a gas log to avoid double counting
-                        if (task.cost && !task.linkedGasLogId) { 
-                             walletsMap[task.associatedWalletId].totalCost += parseMonetaryValue(task.cost);
-                             walletsMap[task.associatedWalletId].count++;
-                        }
-                    }
-                }
-                if (task.subTasks) processTasks(task.subTasks);
-            });
-        };
-        processTasks(ad.tasks);
-    });
-    return Object.values(walletsMap).filter(w => w.totalCost > 0 || w.count > 0).sort((a,b) => b.totalCost - a.totalCost);
-  }, [appData]);
+    // Blockchain distribution
+    const blockchainDistribution = validatedAirdrops.reduce((acc, airdrop) => {
+      acc[airdrop.blockchain] = (acc[airdrop.blockchain] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
 
+    // Status distribution
+    const statusDistribution = validatedAirdrops.reduce((acc, airdrop) => {
+      acc[airdrop.myStatus] = (acc[airdrop.myStatus] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
 
-  const timeAnalysisChartData: ChartData<'bar'> = {
-    labels: timeAnalysisData.slice(0, 10).map(item => item.airdropName),
-    datasets: [{
-      label: 'Time Spent (Minutes)',
-      data: timeAnalysisData.slice(0, 10).map(item => item.totalTimeMinutes),
-      backgroundColor: DISTINCT_COLORS.slice(0,10).map(color => `${color}B3`), // Add alpha
-      borderColor: DISTINCT_COLORS.slice(0,10),
-      borderWidth: 1,
-    }]
-  };
+    // Potential distribution
+    const potentialDistribution = validatedAirdrops.reduce((acc, airdrop) => {
+      acc[airdrop.potential] = (acc[airdrop.potential] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
 
-  const costRoiChartData: ChartData<'bar'> = {
-    labels: costAndPotentialData.slice(0, 10).map(item => item.airdropName),
-    datasets: [
-      {
-        label: 'Total Cost',
-        data: costAndPotentialData.slice(0, 10).map(item => item.totalCost),
-        backgroundColor: 'rgba(239, 68, 68, 0.7)', 
-        borderColor: 'rgba(239, 68, 68, 1)',
-        borderWidth: 1,
-      },
-      {
-        label: 'Est. Potential Reward',
-        data: costAndPotentialData.slice(0, 10).map(item => item.potentialRewardValue),
-        backgroundColor: 'rgba(59, 130, 246, 0.7)',
-        borderColor: 'rgba(59, 130, 246, 1)',
-        borderWidth: 1,
-      },
-      {
-        label: 'Net Potential',
-        data: costAndPotentialData.slice(0, 10).map(item => item.netPotential),
-        backgroundColor: 'rgba(16, 185, 129, 0.7)', 
-        borderColor: 'rgba(16, 185, 129, 1)',
-        borderWidth: 1,
-      }
-    ]
-  };
-  
-  const getChartData = (items: any[], labelKey: string, valueKey: string, colorMapping?: Record<string,string>, topN: number = 7): ChartData<'bar'> => {
-    const sortedItems = [...items].sort((a,b) => b[valueKey] - a[valueKey]).slice(0, topN);
+    // Top performing airdrops by time efficiency
+    const topTimeEfficientAirdrops = validatedAirdrops
+      .filter(a => a.timeSpentHours > 0)
+      .sort((a, b) => a.timeSpentHours - b.timeSpentHours)
+      .slice(0, 5);
+
+    // Most active wallets
+    const mostActiveWallets = validatedWallets
+      .map(wallet => ({
+        ...wallet,
+        activityCount: (wallet.gasLogs?.length || 0) + (wallet.interactionLogs?.length || 0)
+      }))
+      .sort((a, b) => b.activityCount - a.activityCount)
+      .slice(0, 5);
+
+    // Calculate yield performance
+    const totalYieldValue = validatedYieldPositions.reduce((sum, pos) => sum + (pos.currentValue || 0), 0);
+    const averageApy = validatedYieldPositions.length > 0 
+      ? validatedYieldPositions.reduce((sum, pos) => sum + (pos.currentApy || 0), 0) / validatedYieldPositions.length 
+      : 0;
+
     return {
-        labels: sortedItems.map(item => item[labelKey]),
-        datasets: [{
-            label: `Cost by ${labelKey.charAt(0).toUpperCase() + labelKey.slice(1)}`,
-            data: sortedItems.map(item => item[valueKey]),
-            backgroundColor: sortedItems.map((item, idx) => (colorMapping?.[item[labelKey]] || DISTINCT_COLORS[idx % DISTINCT_COLORS.length]) + 'B3'),
-            borderColor: sortedItems.map((item, idx) => colorMapping?.[item[labelKey]] || DISTINCT_COLORS[idx % DISTINCT_COLORS.length]),
-            borderWidth: 1,
-        }]
+      summary: {
+        totalAirdrops,
+        activeAirdrops,
+        completedAirdrops,
+        totalWallets,
+        totalYieldPositions,
+        totalTimeSpent,
+        averageTimePerAirdrop,
+        taskCompletionRate,
+        totalTasks,
+        completedTasks,
+        totalTransactions,
+        totalClaimedTokens,
+        totalGasCosts,
+        totalYieldValue,
+        averageApy
+      },
+      distributions: {
+        blockchain: blockchainDistribution,
+        status: statusDistribution,
+        potential: potentialDistribution
+      },
+      topPerformers: {
+        timeEfficient: topTimeEfficientAirdrops,
+        activeWallets: mostActiveWallets
+      }
     };
-  };
+  }, [validatedAirdrops, validatedWallets, validatedYieldPositions]);
 
-  const categoryChartData = getChartData(costsByCategory, 'category', 'totalCost', CATEGORY_COLORS);
-  const networkChartData = getChartData(costsByNetwork, 'network', 'totalCost', NETWORK_COLORS);
-  const walletChartData = getChartData(costsByWallet, 'walletName', 'totalCost', undefined, 5);
+  const filteredAirdrops = useMemo(() => {
+    return selectedBlockchain === 'all' 
+      ? validatedAirdrops 
+      : validatedAirdrops.filter(a => a.blockchain === selectedBlockchain);
+  }, [validatedAirdrops, selectedBlockchain]);
 
-  const openCostDetailModal = (item: CostByCategoryItem | CostByNetworkItem | CostByWalletItem, type: 'category' | 'network' | 'wallet') => {
-    let title = '';
-    let itemsToDisplay: any[] = []; // Define more specific type later if needed
-    const defaultCategory = 'Uncategorized';
+  const blockchains = useMemo(() => Array.from(new Set(validatedAirdrops.map(a => a.blockchain))).sort(), [validatedAirdrops]);
 
-    if (type === 'category') {
-        const categoryItem = item as CostByCategoryItem;
-        title = `Cost Details for Category: ${categoryItem.category}`;
-        // Logic to populate itemsToDisplay based on categoryItem.category
-        appData.airdrops.forEach(ad => {
-            ad.transactions.forEach(tx => {
-                if ((tx.category || defaultCategory) === categoryItem.category) {
-                    itemsToDisplay.push({ id: tx.id, date: tx.date, description: tx.notes || `Tx: ${tx.hash.substring(0,10)}...`, cost: parseMonetaryValue(tx.cost), type: 'Airdrop Tx', relatedItem: ad.projectName });
-                }
-            });
-        });
-        appData.wallets.forEach(w => {
-            (w.interactionLogs || []).forEach(log => {
-                if ((log.category || log.type || defaultCategory) === categoryItem.category) {
-                     itemsToDisplay.push({ id: log.id, date: log.date, description: log.description, cost: parseMonetaryValue(log.cost), type: 'Interaction Log', relatedItem: w.name });
-                }
-            });
-            (w.gasLogs || []).forEach(log => {
-                const logCat = log.description && log.description.toLowerCase().includes('gas') ? 'Gas Fee' : (log.description || 'Gas Fee');
-                if (logCat === categoryItem.category) {
-                     itemsToDisplay.push({ id: log.id, date: log.date, description: log.description || 'Gas Fee', cost: parseMonetaryValue(log.amount), type: 'Gas Log', relatedItem: w.name });
-                }
-            });
-        });
+  const handleExportReport = () => {
+    try {
+      const exportData = {
+        timeRange,
+        selectedBlockchain,
+        reportType,
+        ...calculatedReportData,
+        generatedAt: new Date().toISOString()
+      };
 
+      let blob: Blob;
+      let filename: string;
+      let mimeType: string;
 
-    } else if (type === 'network') {
-        const networkItem = item as CostByNetworkItem;
-        title = `Cost Details for Network: ${networkItem.network}`;
-        // Logic to populate itemsToDisplay based on networkItem.network
-         appData.wallets.forEach(w => {
-            (w.gasLogs || []).filter(gl => (gl.network || w.blockchain || 'Unknown/Other') === networkItem.network).forEach(log => {
-                itemsToDisplay.push({id: log.id, date: log.date, description: log.description || 'Gas Fee', cost: parseMonetaryValue(log.amount), type: 'Gas Log', relatedItem: w.name});
-            });
-            (w.interactionLogs || []).filter(il => (il.network || w.blockchain || 'Unknown/Other') === networkItem.network).forEach(log => {
-                itemsToDisplay.push({id: log.id, date: log.date, description: log.description, cost: parseMonetaryValue(log.cost), type: 'Interaction Log', relatedItem: w.name});
-            });
-        });
-        appData.airdrops.forEach(ad => {
-            if((ad.blockchain || 'Unknown/Other') === networkItem.network) {
-                ad.transactions.forEach(tx => {
-                     itemsToDisplay.push({id: tx.id, date: tx.date, description: tx.notes || `Tx: ${tx.hash.substring(0,10)}...`, cost: parseMonetaryValue(tx.cost), type: 'Airdrop Tx', relatedItem: ad.projectName});
-                });
-                const processTasks = (tasks: AirdropTask[]) => {
-                  tasks.forEach(task => {
-                    if (task.cost && parseMonetaryValue(task.cost) > 0) {
-                      itemsToDisplay.push({id: task.id, date: task.completionDate || task.dueDate || new Date().toISOString(), description: task.description, cost: parseMonetaryValue(task.cost), type: 'Task Cost', relatedItem: ad.projectName });
-                    }
-                    if (task.subTasks) processTasks(task.subTasks);
-                  });
-                };
-                processTasks(ad.tasks);
-            }
-        });
+      switch (exportFormat) {
+        case 'csv':
+          const csvData = convertToCSV(exportData);
+          blob = new Blob([csvData], { type: 'text/csv' });
+          filename = `crypto-farming-report-${new Date().toISOString().split('T')[0]}.csv`;
+          mimeType = 'text/csv';
+          break;
+        case 'pdf':
+          // For now, export as JSON with PDF extension (would need PDF library)
+          blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+          filename = `crypto-farming-report-${new Date().toISOString().split('T')[0]}.json`;
+          mimeType = 'application/json';
+          addToast('PDF export would require additional library. Exporting as JSON.', 'info');
+          break;
+        default: // json
+          blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+          filename = `crypto-farming-report-${new Date().toISOString().split('T')[0]}.json`;
+          mimeType = 'application/json';
+      }
 
-    } else if (type === 'wallet') {
-        const walletItem = item as CostByWalletItem;
-        title = `Cost Details for Wallet: ${walletItem.walletName}`;
-        // Logic to populate itemsToDisplay based on walletItem.walletId
-        const wallet = appData.wallets.find(w => w.id === walletItem.walletId);
-        if(wallet) {
-            (wallet.gasLogs || []).forEach(log => {
-                itemsToDisplay.push({id: log.id, date: log.date, description: log.description || 'Gas Fee', cost: parseMonetaryValue(log.amount), type: 'Gas Log'});
-            });
-            (wallet.interactionLogs || []).forEach(log => {
-                itemsToDisplay.push({id: log.id, date: log.date, description: log.description, cost: parseMonetaryValue(log.cost), type: 'Interaction Log'});
-            });
-             appData.airdrops.forEach(ad => {
-                ad.tasks.forEach(task => {
-                    // Only include task.cost if NOT linked to a gasLog to avoid double count with wallet's gas logs
-                    if(task.associatedWalletId === wallet.id && task.cost && parseMonetaryValue(task.cost) > 0 && !task.linkedGasLogId) { 
-                        itemsToDisplay.push({ id: task.id, date: task.completionDate || task.dueDate || new Date().toISOString(), description: task.description, cost: parseMonetaryValue(task.cost), type: 'Task Cost', relatedItem: ad.projectName });
-                    }
-                })
-            })
-        }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      addToast(`Report exported successfully as ${exportFormat.toUpperCase()}.`, 'success');
+    } catch (error) {
+      addToast('Failed to export report. Please try again.', 'error');
+      console.error('Export error:', error);
     }
-    setDetailModalTitle(title);
-    setDetailModalItems(itemsToDisplay.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-    setDetailModalItemType(type);
-    setIsDetailModalOpen(true);
   };
 
-  const TabButton: React.FC<{tabId: ReportTab, label: string, icon: React.ElementType}> = ({tabId, label, icon: Icon}) => (
-    <Button
-        variant={activeTab === tabId ? 'primary' : 'outline'}
-        onClick={() => setActiveTab(tabId)}
-        leftIcon={<Icon size={16}/>}
-        className="flex-1 sm:flex-none"
-    >
-        {label}
-    </Button>
-  );
+  const convertToCSV = (data: any): string => {
+    // Simple CSV conversion for key metrics
+    const csvRows = [
+      ['Metric', 'Value'],
+      ['Total Airdrops', data.summary.totalAirdrops],
+      ['Active Airdrops', data.summary.activeAirdrops],
+      ['Completed Airdrops', data.summary.completedAirdrops],
+      ['Total Wallets', data.summary.totalWallets],
+      ['Total Yield Positions', data.summary.totalYieldPositions],
+      ['Total Time Spent (hours)', data.summary.totalTimeSpent],
+      ['Average Time Per Airdrop (hours)', data.summary.averageTimePerAirdrop],
+      ['Task Completion Rate (%)', data.summary.taskCompletionRate],
+      ['Total Transactions', data.summary.totalTransactions],
+      ['Total Claimed Tokens', data.summary.totalClaimedTokens],
+      ['Total Gas Costs', data.summary.totalGasCosts],
+      ['Total Yield Value', data.summary.totalYieldValue],
+      ['Average APY (%)', data.summary.averageApy],
+      ['', ''],
+      ['Blockchain Distribution', ''],
+      ...Object.entries(data.distributions.blockchain).map(([chain, count]) => [chain, count]),
+      ['', ''],
+      ['Status Distribution', ''],
+      ...Object.entries(data.distributions.status).map(([status, count]) => [status, count])
+    ];
+
+    return csvRows.map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
+  };
 
   return (
     <PageWrapper>
-      <div className="flex items-center mb-6">
-        <Briefcase size={28} className="mr-3 text-primary-light dark:text-primary-dark" />
-        <h2 className="text-2xl font-semibold text-text-light dark:text-text-dark">Reports & Analysis</h2>
-      </div>
-
-      <div className="mb-4 flex flex-wrap gap-2 border-b border-gray-300 dark:border-gray-600 pb-2">
-        <TabButton tabId="cost_roi" label="Cost & Potential ROI" icon={DollarSign} />
-        <TabButton tabId="time" label="Time Analysis" icon={Clock} />
-        <TabButton tabId="cost_analyzer" label="Aggregated Cost Analyzer" icon={PieChart} />
-      </div>
-
-      {activeTab === 'cost_roi' && (
-        <Card>
-          <h3 className="text-lg font-semibold mb-3">Airdrop Cost vs. Potential ROI Analysis</h3>
-          {costAndPotentialData.length === 0 ? (
-            <p className="text-muted-light dark:text-muted-dark">No cost or potential data logged for airdrops yet.</p>
-          ) : (
-            <>
-              <div className="h-96 mb-6">
-                <h4 className="text-lg font-semibold mb-2">Top 10 Airdrops by Net Potential</h4>
-                <BarChart 
-                     data={costRoiChartData}
-                     options={{ maintainAspectRatio: false, indexAxis: 'x', plugins: { legend: { display: true}}, onClick: (_, elements) => { if(elements.length > 0) { const index = elements[0].index; const airdrop = costAndPotentialData[index]; if(airdrop) navigate(`/airdrops/${airdrop.airdropId}`); }}}}
+      <div className="p-6 space-y-6">
+        {/* Header */}
+        <Card variant="elevated" padding="lg">
+          <CardHeader>
+            <h3 className="text-lg font-semibold flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <BarChart3 size={24} className="text-accent" />
+                Reports & Analytics
+              </div>
+              <div className="flex items-center gap-2">
+                <Select
+                  value={exportFormat}
+                  onValueChange={(value) => setExportFormat(value as any)}
+                  options={[
+                    { value: 'json', label: 'JSON' },
+                    { value: 'csv', label: 'CSV' },
+                    { value: 'pdf', label: 'PDF' }
+                  ]}
+                  className="w-24"
                 />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleExportReport}
+                  leftIcon={<Download size={16} />}
+                >
+                  Export {exportFormat.toUpperCase()}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => window.location.reload()}
+                  leftIcon={<RefreshCw size={16} />}
+                >
+                  Refresh
+                </Button>
               </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                  <thead className="bg-gray-50 dark:bg-gray-800">
-                    <tr>
-                      {['Project', 'Total Cost', 'Potential Reward', 'Net Potential'].map(header => (
-                        <th key={header} scope="col" className="px-4 py-2.5 text-left text-xs font-medium text-muted-light dark:text-muted-dark uppercase tracking-wider">{header}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white dark:bg-gray-750 divide-y divide-gray-200 dark:divide-gray-700">
-                    {costAndPotentialData.map(item => (
-                      <tr key={item.airdropId} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                        <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-primary-light dark:text-primary-dark"><Link to={`/airdrops/${item.airdropId}`}>{item.airdropName}</Link></td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-red-500">{formatCurrency(item.totalCost)}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-blue-500">{formatCurrency(item.potentialRewardValue)}</td>
-                        <td className={`px-4 py-3 whitespace-nowrap text-sm font-semibold ${item.netPotential >= 0 ? 'text-green-500' : 'text-red-500'}`}>{formatCurrency(item.netPotential)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
+            </h3>
+          </CardHeader>
+          <CardContent>
+            <p className="text-secondary">
+              Comprehensive reports and analytics for your crypto farming activities.
+            </p>
+          </CardContent>
         </Card>
-      )}
 
-      {activeTab === 'time' && (
-        <Card>
-          <h3 className="text-lg font-semibold mb-3">Time Spent Analysis per Airdrop</h3>
-          {timeAnalysisData.length === 0 ? (
-            <p className="text-muted-light dark:text-muted-dark">No time logged for airdrops yet.</p>
-          ) : (
-            <>
-              <div className="h-96 mb-6">
-                <h4 className="text-lg font-semibold mb-2">Top 10 Airdrops by Time Spent</h4>
-                <BarChart 
-                     data={timeAnalysisChartData}
-                     options={{ maintainAspectRatio: false, indexAxis: 'x', plugins: { legend: { display: false }}, scales: {y: {title: {display: true, text: 'Minutes'}}}, onClick: (_, elements) => { if(elements.length > 0) { const index = elements[0].index; const airdrop = timeAnalysisData[index]; if(airdrop) navigate(`/airdrops/${airdrop.airdropId}`); }}}}
-                />
-              </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                  <thead className="bg-gray-50 dark:bg-gray-800">
-                    <tr>
-                      {['Project', 'Total Time Spent'].map(header => (
-                        <th key={header} scope="col" className="px-4 py-2.5 text-left text-xs font-medium text-muted-light dark:text-muted-dark uppercase tracking-wider">{header}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white dark:bg-gray-750 divide-y divide-gray-200 dark:divide-gray-700">
-                    {timeAnalysisData.map(item => (
-                      <tr key={item.airdropId} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                        <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-primary-light dark:text-primary-dark"><Link to={`/airdrops/${item.airdropId}`}>{item.airdropName}</Link></td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-text-light dark:text-text-dark">{formatMinutesToHoursAndMinutes(item.totalTimeMinutes)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-        </Card>
-      )}
-
-      {activeTab === 'cost_analyzer' && (
-        <div className="space-y-6">
-            <Card>
-                <h3 className="text-xl font-semibold text-text-light dark:text-text-dark mb-3 flex items-center">
-                <BarChart3 size={24} className="mr-2 text-primary-light dark:text-primary-dark" />
-                Overall Cost Summary
-                </h3>
-                <p className="text-3xl font-bold text-red-600 dark:text-red-500">
-                Total Logged Costs: {formatCurrency(overallCosts)}
-                </p>
-                <p className="text-xs text-muted-light dark:text-muted-dark mt-1">
-                This sum includes all gas fees, transaction costs, and direct task costs logged across the application.
-                </p>
-            </Card>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                 <Card>
-                    <h4 className="text-lg font-semibold mb-3 flex items-center"><Layers size={18} className="mr-2 text-teal-500"/>Costs by Category</h4>
-                    {costsByCategory.length === 0 ? <p className="text-sm text-muted-light dark:text-muted-dark">No costs logged by category.</p> : (
-                        <div className="h-80">
-                        <h4 className="text-md font-semibold mb-2">Top Categories by Cost</h4>
-                        <BarChart 
-                            data={categoryChartData}
-                            options={{ indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false } }, onClick: (_, elements) => { if(elements.length > 0) {const index = elements[0].index; openCostDetailModal(costsByCategory[index], 'category');}} }}
-                        />
-                        </div>
-                    )}
-                    <p className="text-xs text-muted-light dark:text-muted-dark mt-1">Click on chart bars for drill-down.</p>
-                </Card>
-                <Card>
-                    <h4 className="text-lg font-semibold mb-3 flex items-center"><Network size={18} className="mr-2 text-cyan-500"/>Costs by Network</h4>
-                    {costsByNetwork.length === 0 ? <p className="text-sm text-muted-light dark:text-muted-dark">No costs logged by network.</p> : (
-                        <div className="h-80">
-                        <h4 className="text-md font-semibold mb-2">Top Networks by Cost</h4>
-                        <BarChart
-                            data={networkChartData}
-                            options={{ indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false } }, onClick: (_, elements) => { if(elements.length > 0) {const index = elements[0].index; openCostDetailModal(costsByNetwork[index], 'network');}} }}
-                        />
-                        </div>
-                    )}
-                    <p className="text-xs text-muted-light dark:text-muted-dark mt-1">Click on chart bars for drill-down.</p>
-                </Card>
+        {/* Filters */}
+        <Card variant="default" padding="md">
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Select
+                value={timeRange}
+                onValueChange={(value) => setTimeRange(value as any)}
+                options={[
+                  { value: '7d', label: 'Last 7 Days' },
+                  { value: '30d', label: 'Last 30 Days' },
+                  { value: '90d', label: 'Last 90 Days' },
+                  { value: '1y', label: 'Last Year' },
+                  { value: 'all', label: 'All Time' }
+                ]}
+              />
+              <Select
+                value={selectedBlockchain}
+                onValueChange={(value) => setSelectedBlockchain(value as string)}
+                options={[
+                  { value: 'all', label: 'All Blockchains' },
+                  ...blockchains.map(bc => ({ value: bc, label: bc }))
+                ]}
+              />
+              <Select
+                value={reportType}
+                onValueChange={(value) => setReportType(value as any)}
+                options={[
+                  { value: 'overview', label: 'Overview' },
+                  { value: 'time', label: 'Time Analysis' },
+                  { value: 'cost', label: 'Cost Analysis' },
+                  { value: 'performance', label: 'Performance' }
+                ]}
+              />
             </div>
-             <Card>
-                <h4 className="text-lg font-semibold mb-3 flex items-center"><WalletIcon size={18} className="mr-2 text-orange-500"/>Costs by Wallet</h4>
-                {costsByWallet.length === 0 ? <p className="text-sm text-muted-light dark:text-muted-dark">No costs associated with specific wallets yet.</p> : (
-                    <div className="h-80">
-                        <h4 className="text-md font-semibold mb-2">Top 5 Wallets by Cost</h4>
-                        <BarChart
-                            data={walletChartData}
-                            options={{ indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false } }, onClick: (_, elements) => { if(elements.length > 0) {const index = elements[0].index; openCostDetailModal(costsByWallet[index], 'wallet');}} }}
-                        />
+          </CardContent>
+        </Card>
+
+        {/* Overview */}
+        {reportType === 'overview' && (
+          <>
+            {/* Summary Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <Card variant="default" padding="md">
+                <CardContent>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Total Airdrops</p>
+                      <p className="text-2xl font-bold">{calculatedReportData.summary.totalAirdrops}</p>
+                      <p className="text-xs text-gray-500">
+                        {calculatedReportData.summary.activeAirdrops} active, {calculatedReportData.summary.completedAirdrops} completed
+                      </p>
                     </div>
-                )}
-                <p className="text-xs text-muted-light dark:text-muted-dark mt-1">Click on chart bars for drill-down.</p>
+                    <BarChart3 size={24} className="text-blue-600" />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card variant="default" padding="md">
+                <CardContent>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Task Completion</p>
+                      <p className="text-2xl font-bold">{calculatedReportData.summary.taskCompletionRate.toFixed(1)}%</p>
+                      <p className="text-xs text-gray-500">
+                        {calculatedReportData.summary.completedTasks}/{calculatedReportData.summary.totalTasks} tasks
+                      </p>
+                    </div>
+                    <Target size={24} className="text-green-600" />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card variant="default" padding="md">
+                <CardContent>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Time Spent</p>
+                      <p className="text-2xl font-bold">{calculatedReportData.summary.totalTimeSpent.toFixed(1)}h</p>
+                      <p className="text-xs text-gray-500">
+                        {calculatedReportData.summary.averageTimePerAirdrop.toFixed(1)}h avg per airdrop
+                      </p>
+                    </div>
+                    <Clock size={24} className="text-purple-600" />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card variant="default" padding="md">
+                <CardContent>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Total Assets</p>
+                      <p className="text-2xl font-bold">{calculatedReportData.summary.totalWallets + calculatedReportData.summary.totalYieldPositions}</p>
+                      <p className="text-xs text-gray-500">
+                        {calculatedReportData.summary.totalWallets} wallets, {calculatedReportData.summary.totalYieldPositions} yield positions
+                      </p>
+                    </div>
+                    <DollarSign size={24} className="text-yellow-600" />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Distribution Charts */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card variant="default" padding="md">
+                <CardHeader>
+                  <h4 className="text-md font-semibold flex items-center gap-2">
+                    <PieChart size={16} />
+                    Blockchain Distribution
+                  </h4>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {Object.entries(calculatedReportData.distributions.blockchain)
+                      .sort(([,a], [,b]) => b - a)
+                      .map(([blockchain, count]) => (
+                        <div key={blockchain} className="flex items-center justify-between">
+                          <span className="text-sm">{blockchain}</span>
+                          <span className="text-sm font-medium">{count}</span>
+                        </div>
+                      ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card variant="default" padding="md">
+                <CardHeader>
+                  <h4 className="text-md font-semibold flex items-center gap-2">
+                    <PieChart size={16} />
+                    Status Distribution
+                  </h4>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {Object.entries(calculatedReportData.distributions.status)
+                      .sort(([,a], [,b]) => b - a)
+                      .map(([status, count]) => (
+                        <div key={status} className="flex items-center justify-between">
+                          <span className="text-sm">{status}</span>
+                          <span className="text-sm font-medium">{count}</span>
+                        </div>
+                      ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card variant="default" padding="md">
+                <CardHeader>
+                  <h4 className="text-md font-semibold flex items-center gap-2">
+                    <PieChart size={16} />
+                    Potential Distribution
+                  </h4>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {Object.entries(calculatedReportData.distributions.potential)
+                      .sort(([,a], [,b]) => b - a)
+                      .map(([potential, count]) => (
+                        <div key={potential} className="flex items-center justify-between">
+                          <span className="text-sm">{potential}</span>
+                          <span className="text-sm font-medium">{count}</span>
+                        </div>
+                      ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </>
+        )}
+
+        {/* Time Analysis */}
+        {reportType === 'time' && (
+          <div className="space-y-6">
+            <Card variant="default" padding="md">
+              <CardHeader>
+                <h4 className="text-md font-semibold flex items-center gap-2">
+                  <Clock size={16} />
+                  Time Analysis Summary
+                </h4>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-blue-600">{calculatedReportData.summary.totalTimeSpent.toFixed(1)}h</p>
+                    <p className="text-sm text-gray-600">Total Time Spent</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-green-600">{calculatedReportData.summary.averageTimePerAirdrop.toFixed(1)}h</p>
+                    <p className="text-sm text-gray-600">Average per Airdrop</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-purple-600">{calculatedReportData.summary.totalAirdrops}</p>
+                    <p className="text-sm text-gray-600">Total Airdrops</p>
+                  </div>
+                </div>
+              </CardContent>
             </Card>
-        </div>
-      )}
-      <CostDetailModal 
-        isOpen={isDetailModalOpen}
-        onClose={() => setIsDetailModalOpen(false)}
-        title={detailModalTitle}
-        items={detailModalItems}
-        itemTypeForNoItems={detailModalItemType}
-      />
+
+            <Card variant="default" padding="md">
+              <CardHeader>
+                <h4 className="text-md font-semibold flex items-center gap-2">
+                  <TrendingUp size={16} />
+                  Most Time-Efficient Airdrops
+                </h4>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {calculatedReportData.topPerformers.timeEfficient.map(airdrop => (
+                    <div key={airdrop.id} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-800 rounded">
+                      <div>
+                        <p className="font-medium">{airdrop.projectName}</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">{airdrop.blockchain}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-medium">{airdrop.timeSpentHours.toFixed(1)}h</p>
+                        <p className="text-xs text-gray-500">{airdrop.myStatus}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Cost Analysis */}
+        {reportType === 'cost' && (
+          <div className="space-y-6">
+            <Card variant="default" padding="md">
+              <CardHeader>
+                <h4 className="text-md font-semibold flex items-center gap-2">
+                  <DollarSign size={16} />
+                  Cost Analysis Summary
+                </h4>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-red-600">${calculatedReportData.summary.totalGasCosts.toFixed(2)}</p>
+                    <p className="text-sm text-gray-600">Total Gas Costs</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-blue-600">{calculatedReportData.summary.totalTransactions}</p>
+                    <p className="text-sm text-gray-600">Total Transactions</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-green-600">{calculatedReportData.summary.totalClaimedTokens}</p>
+                    <p className="text-sm text-gray-600">Tokens Claimed</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Performance Analysis */}
+        {reportType === 'performance' && (
+          <div className="space-y-6">
+            <Card variant="default" padding="md">
+              <CardHeader>
+                <h4 className="text-md font-semibold flex items-center gap-2">
+                  <Activity size={16} />
+                  Performance Metrics
+                </h4>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-green-600">{calculatedReportData.summary.taskCompletionRate.toFixed(1)}%</p>
+                    <p className="text-sm text-gray-600">Task Completion Rate</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-blue-600">{calculatedReportData.summary.completedAirdrops}</p>
+                    <p className="text-sm text-gray-600">Completed Airdrops</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card variant="default" padding="md">
+              <CardHeader>
+                <h4 className="text-md font-semibold flex items-center gap-2">
+                  <Users size={16} />
+                  Most Active Wallets
+                </h4>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {calculatedReportData.topPerformers.activeWallets.map(wallet => (
+                    <div key={wallet.id} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-800 rounded">
+                      <div>
+                        <p className="font-medium">{wallet.name}</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">{wallet.blockchain}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-medium">{wallet.activityCount}</p>
+                        <p className="text-xs text-gray-500">activities</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+      </div>
     </PageWrapper>
   );
 };

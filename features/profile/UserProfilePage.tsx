@@ -4,7 +4,8 @@ import { Card, CardHeader, CardContent } from '../../design-system/components/Ca
 import { Button } from '../../design-system/components/Button';
 import { Input } from '../../design-system/components/Input';
 import { UserFarmingPreferences, UserBadge as UserBadgeType, AppSettings } from '../../types';
-import { useAppContext } from '../../contexts/AppContext';
+import { useAuthStore } from '../../stores/authStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { useToast } from '../../hooks/useToast';
 import { useTranslation } from '../../hooks/useTranslation';
 import { UserCircle, Edit3, Save, XCircle, Award, BarChart3, Star, Sparkles, Droplets, ListChecks, WalletCards, NotebookPen, CalendarCheck, ShieldCheck, TrendingUp, HelpCircle } from 'lucide-react';
@@ -31,7 +32,8 @@ const calculateLevel = (points: number): { level: number; progress: number; next
 
 
 export const UserProfilePage: React.FC = () => {
-  const { currentUser, appData, updateSettings } = useAppContext();
+  const { currentUser } = useAuthStore();
+  const { settings, updateSettings } = useSettingsStore();
   const { addToast } = useToast();
   const { t } = useTranslation();
 
@@ -40,15 +42,15 @@ export const UserProfilePage: React.FC = () => {
   const [editableEmail, setEditableEmail] = useState(currentUser?.email || '');
 
   const [preferences, setPreferences] = useState<UserFarmingPreferences>(
-    appData.settings.userPreferences || DEFAULT_USER_FARMING_PREFERENCES
+    settings.userPreferences || DEFAULT_USER_FARMING_PREFERENCES
   );
   
   useEffect(() => {
-    const newPrefs = appData.settings.userPreferences || DEFAULT_USER_FARMING_PREFERENCES;
+    const newPrefs = settings.userPreferences || DEFAULT_USER_FARMING_PREFERENCES;
     if (JSON.stringify(preferences) !== JSON.stringify(newPrefs)) {
       setPreferences(newPrefs);
     }
-  }, [appData.settings.userPreferences]);
+  }, [settings.userPreferences]);
 
 
   const handleDetailsSave = async () => {
@@ -68,10 +70,10 @@ export const UserProfilePage: React.FC = () => {
     addToast(t('profile_preferences_saved', {defaultValue: 'Farming preferences saved!'}), 'success');
   };
   
-  const userPoints = appData.settings.userPoints || 0;
+  const userPoints = settings.userPoints || 0;
   const { level, progress, nextLevelPoints } = calculateLevel(userPoints);
-  const currentStreak = appData.settings.currentStreak || 0;
-  const userBadges: UserBadgeType[] = appData.userBadges || [];
+  const currentStreak = settings.currentStreak || 0;
+  const userBadges: UserBadgeType[] = settings.userBadges || [];
 
   if (!currentUser) {
     return <PageWrapper><p>{t('common_loading', {defaultValue: 'Loading user profile...'})}</p></PageWrapper>;

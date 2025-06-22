@@ -15,7 +15,7 @@ import {
   InteractionItem,
   Plugin
 } from 'chart.js';
-import { useTheme, getThemeColors } from '../../contexts/ThemeContext';
+import { useTheme, getThemeColors, ColorScheme } from '../../contexts/ThemeContext';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
 ChartJS.register(
@@ -81,7 +81,18 @@ export const EnhancedLineChart: React.FC<EnhancedLineChartProps> = ({
   showTrendline = false,
   className = ''
 }) => {
-  const { config, actualTheme } = useTheme();
+  // Use theme context with fallback to prevent errors when used outside ThemeProvider
+  let themeConfig, actualTheme: 'light' | 'dark';
+  try {
+    const theme = useTheme();
+    themeConfig = theme.config;
+    actualTheme = theme.actualTheme;
+  } catch (error) {
+    // Fallback when theme context is not available
+    themeConfig = { colorScheme: ColorScheme.PURPLE, reducedMotion: false };
+    actualTheme = 'light';
+  }
+
   const chartRef = useRef<ChartJS<'line'>>(null);
   const [activePoint, setActivePoint] = useState<InteractionItem[]>([]);
   const [chartStats, setChartStats] = useState<{
@@ -90,7 +101,7 @@ export const EnhancedLineChart: React.FC<EnhancedLineChartProps> = ({
     changePercent: number;
   } | null>(null);
 
-  const colors = getThemeColors(actualTheme, config.colorScheme);
+  const colors = getThemeColors(actualTheme, themeConfig.colorScheme);
 
   // Calculate stats from data
   useEffect(() => {

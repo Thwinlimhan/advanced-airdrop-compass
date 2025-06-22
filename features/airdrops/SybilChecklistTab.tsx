@@ -2,14 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { Airdrop, SybilChecklistItem } from '../../types';
 import { Card } from '../../design-system/components/Card';
 import { Button } from '../../design-system/components/Button';
-import { CheckSquare, Square, Edit2, Save, X, Brain, Loader2, Info } from 'lucide-react'; 
+import { CheckSquare, Square, Edit2, Save, X, Brain, Loader2, Info, ShieldCheck, AlertTriangle, CheckCircle, XCircle } from 'lucide-react'; 
 import { Textarea } from '../../design-system/components/Textarea';
 import { Modal } from '../../design-system/components/Modal';
-import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
-import { useToast } from '../../hooks/useToast';
-import { useAppContext } from '../../contexts/AppContext';
 import { AlertMessage } from '../../components/ui/AlertMessage';
-
+import { useToast } from '../../hooks/useToast';
+import { aiService } from '../../utils/aiService';
 
 interface SybilChecklistTabProps {
   airdrop: Airdrop;
@@ -20,18 +18,16 @@ type MergeChoice = 'append' | 'prepend' | 'replace';
 
 export const SybilChecklistTab: React.FC<SybilChecklistTabProps> = ({ airdrop, onUpdateItem }) => {
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
-  const [editingNotes, setEditingNotes] = useState('');
+  const [editingNotes, setEditingNotes] = useState<string>('');
   const [aiLoadingItemId, setAiLoadingItemId] = useState<string | null>(null);
   const { addToast } = useToast();
-  const { updateAirdropSybilItem } = useAppContext(); 
-  
   const [showMergeModal, setShowMergeModal] = useState(false);
   const [itemForMerge, setItemForMerge] = useState<SybilChecklistItem | null>(null);
-  const [aiSuggestionForMerge, setAiSuggestionForMerge] = useState('');
+  const [aiSuggestionForMerge, setAiSuggestionForMerge] = useState<string>('');
   const [isApiKeyMissing, setIsApiKeyMissing] = useState(false);
 
   useEffect(() => {
-    if (!process.env.API_KEY) {
+    if (!aiService.isAvailable()) {
       setIsApiKeyMissing(true);
     }
   }, []);
@@ -76,19 +72,14 @@ export const SybilChecklistTab: React.FC<SybilChecklistTabProps> = ({ airdrop, o
     addToast('AI is thinking about Sybil resistance for this item...', 'info');
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
-      
       const systemInstruction = `You are an expert in cryptocurrency airdrop Sybil prevention. For the following Sybil checklist item, provide a concise, actionable explanation or suggestion (2-3 sentences max) for how a user might address or think about this item to improve their Sybil resistance. If relevant, consider the project name: '${airdrop.projectName}'. Keep the note suitable for a user's personal checklist. Output should be plain text. Be practical and focused on helping the user build good habits.`;
       
-      const response: GenerateContentResponse = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-preview-04-17',
-        contents: `Sybil Checklist Item: "${item.text}" for project "${airdrop.projectName}"`,
-        config: {
-          systemInstruction: systemInstruction,
-        }
-      });
+      const prompt = `Sybil Checklist Item: "${item.text}" for project "${airdrop.projectName}"`;
+      const fullPrompt = `${systemInstruction}\n\n${prompt}`;
       
-      let aiSuggestedNotes = response.text.trim();
+      let aiSuggestedNotes = await aiService.generateContent(fullPrompt);
+      aiSuggestedNotes = aiSuggestedNotes.trim();
+      
       const fenceRegex = /^```(\w*)?\s*\n?(.*?)\n?\s*```$/s;
       const match = aiSuggestedNotes.match(fenceRegex);
       if (match && match[2]) {
@@ -109,7 +100,7 @@ export const SybilChecklistTab: React.FC<SybilChecklistTabProps> = ({ airdrop, o
       }
 
     } catch (err) {
-      console.error("Error calling Gemini API for Sybil assist:", err);
+      console.error("Error calling AI service for Sybil assist:", err);
       const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
       addToast(`AI Assist Error: ${errorMessage}`, 'error');
     } finally {

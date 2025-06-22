@@ -12,6 +12,7 @@ import {
 } from 'chart.js';
 import { useTheme, getThemeColors } from '../../contexts/ThemeContext';
 import { PieChart, TrendingUp, Info } from 'lucide-react';
+import { ColorScheme } from '../../contexts/ThemeContext';
 
 ChartJS.register(ArcElement, Tooltip, Legend, Title);
 
@@ -108,7 +109,17 @@ export const EnhancedDoughnutChart: React.FC<EnhancedDoughnutChartProps> = ({
   showStats = true,
   className = ''
 }) => {
-  const { config, actualTheme } = useTheme();
+  // Use theme context with fallback to prevent errors when used outside ThemeProvider
+  let themeConfig, actualTheme: 'light' | 'dark';
+  try {
+    const theme = useTheme();
+    themeConfig = theme.config;
+    actualTheme = theme.actualTheme;
+  } catch (error) {
+    // Fallback when theme context is not available
+    themeConfig = { colorScheme: ColorScheme.PURPLE, reducedMotion: false };
+    actualTheme = 'light';
+  }
   const chartRef = useRef<ChartJS<'doughnut'>>(null);
   const [hoveredSegment, setHoveredSegment] = useState<number | null>(null);
   const [chartStats, setChartStats] = useState<{
@@ -117,7 +128,7 @@ export const EnhancedDoughnutChart: React.FC<EnhancedDoughnutChartProps> = ({
     segments: { label: string; value: number; percentage: number }[];
   } | null>(null);
 
-  const colors = getThemeColors(actualTheme, config.colorScheme);
+  const colors = getThemeColors(actualTheme, themeConfig.colorScheme);
 
   // Calculate statistics
   const stats = useMemo(() => {

@@ -1,7 +1,8 @@
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Sidebar as DesignSystemSidebar, SidebarItem } from '../../design-system/components/Sidebar';
-import { useAppContext } from '../../contexts/AppContext';
+import { useAuthStore } from '../../stores/authStore';
+import { useUIStore } from '../../stores/uiStore';
 import { useTranslation } from '../../hooks/useTranslation';
 import {
   LayoutDashboard,
@@ -22,7 +23,8 @@ import {
 import { NavItem } from '../../types';
 
 export const Sidebar: React.FC = () => {
-    const { logout, isSidebarOpen, toggleSidebar } = useAppContext();
+    const { logout } = useAuthStore();
+    const { isSidebarOpen, toggleSidebar } = useUIStore();
     const navigate = useNavigate();
     const location = useLocation();
     const { t } = useTranslation();
@@ -35,8 +37,8 @@ export const Sidebar: React.FC = () => {
     const navItems: NavItem[] = [
         { id: 'dashboard', label: t('nav_dashboard', { defaultValue: 'Dashboard' }), path: '/', icon: LayoutDashboard },
         { id: 'airdrops', label: t('nav_airdrops', { defaultValue: 'Airdrops' }), path: '/airdrops', icon: Target },
-        { id: 'tasks', label: t('nav_tasks', { defaultValue: 'Tasks' }), path: '/tasks', icon: CalendarCheck },
-        { id: 'yield', label: t('nav_yield', { defaultValue: 'Yield' }), path: '/yield-tracker', icon: FlaskConical },
+        { id: 'tasks', label: t('nav_tasks', { defaultValue: 'Tasks' }), path: '/recurring-tasks', icon: CalendarCheck },
+        { id: 'yield', label: t('nav_yield', { defaultValue: 'Yield' }), path: '/yield', icon: FlaskConical },
         { id: 'learning', label: t('nav_learning', { defaultValue: 'Learning' }), path: '/learning', icon: BookOpen },
         { id: 'portfolio', label: t('nav_portfolio', { defaultValue: 'Portfolio' }), path: '/portfolio', icon: History },
         { id: 'watchlist', label: t('nav_watchlist', { defaultValue: 'Watchlist' }), path: '/watchlist', icon: Eye },
@@ -62,13 +64,13 @@ export const Sidebar: React.FC = () => {
             id: 'ai-strategy',
             label: t('nav_ai_strategy', { defaultValue: 'AI Strategy' }),
             icon: <Lightbulb />,
-            href: '/learning/aiStrategy',
+            href: '/ai-strategy',
           },
           {
             id: 'ai-analyst',
             label: t('nav_ai_analyst', { defaultValue: 'AI Analyst' }),
             icon: <Bot />,
-            href: '/learning/aiAnalyst',
+            href: '/ai-analyst',
           },
         ],
       },
@@ -91,8 +93,8 @@ export const Sidebar: React.FC = () => {
     const getActiveItemId = () => {
       const currentPath = location.pathname;
       if (currentPath === '/') return 'dashboard';
-      if (currentPath.startsWith('/learning/aiStrategy')) return 'ai-strategy';
-      if (currentPath.startsWith('/learning/aiAnalyst')) return 'ai-analyst';
+      if (currentPath.startsWith('/ai-strategy')) return 'ai-strategy';
+      if (currentPath.startsWith('/ai-analyst')) return 'ai-analyst';
       for (let i = navItems.length - 1; i >= 0; i--) {
         if (navItems[i].path !== '/' && currentPath.startsWith(navItems[i].path)) {
           return navItems[i].id;

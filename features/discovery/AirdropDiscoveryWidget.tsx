@@ -2,27 +2,27 @@ import React, { useState, useEffect } from 'react';
 import { Card } from '../../design-system/components/Card';
 import { Button } from '../../design-system/components/Button';
 import { DiscoveredAirdropSuggestion, ConfidenceLevel } from '../../types';
-import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
-import { Sparkles, Brain, PlusCircle, Loader2, ExternalLink } from 'lucide-react';
-import { useAppContext } from '../../contexts/AppContext';
+import { Search, Loader2, AlertTriangle, ExternalLink } from 'lucide-react';
+import { useWatchlistStore } from '../../stores/watchlistStore';
 import { useToast } from '../../hooks/useToast';
 import { AlertMessage } from '../../components/ui/AlertMessage';
 import { DiscoveredAirdropDetailModal } from "./AirdropDiscoveryDetailModal";
+import { aiService } from '../../utils/aiService';
 
 export const AirdropDiscoveryWidget: React.FC = () => {
   const [suggestions, setSuggestions] = useState<DiscoveredAirdropSuggestion[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { addWatchlistItem } = useAppContext();
+  const { addWatchlistItem } = useWatchlistStore();
   const { addToast } = useToast();
   const [isApiKeyMissing, setIsApiKeyMissing] = useState(false);
   const [selectedSuggestion, setSelectedSuggestion] = useState<DiscoveredAirdropSuggestion | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
 
   useEffect(() => {
-    if (!process.env.API_KEY) {
+    if (!aiService.isAvailable()) {
       setIsApiKeyMissing(true);
-      setError("API_KEY for AI features is not configured. AI-powered discovery is unavailable.");
+      setError(`AI-powered discovery is unavailable because ${aiService.getProviderName()} is not configured.`);
     }
   }, []);
 
@@ -38,7 +38,7 @@ export const AirdropDiscoveryWidget: React.FC = () => {
 
   const fetchSuggestions = async () => {
     if (isApiKeyMissing) {
-      setError("API_KEY for AI features is not configured. AI-powered discovery is unavailable.");
+      setError(`AI-powered discovery is unavailable because ${aiService.getProviderName()} is not configured.`);
       addToast("AI Discovery disabled: API Key missing.", "warning");
       return;
     }
@@ -47,8 +47,6 @@ export const AirdropDiscoveryWidget: React.FC = () => {
     setSuggestions([]);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
-
       const prompt = `You are an AI that discovers potential crypto airdrop opportunities by analyzing hypothetical crypto news, social media trends, and project announcements. Generate a list of 3 to 5 fictional but plausible upcoming crypto airdrop opportunities.
 For each, provide:
 1.  projectName: A creative and catchy project name (e.g., "QuantumLeap Finance", "NovaNet Bridge", "PixelPaws NFT", "Celestial L2", "DeFiOrbital").
@@ -61,13 +59,9 @@ For each, provide:
 
 Return the response as a JSON array of objects. Ensure valid JSON format. ABSOLUTELY DO NOT use markdown code fences (e.g., \`\`\`json ... \`\`\`). The response must be a raw JSON string.`;
 
-      const response: GenerateContentResponse = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-preview-04-17',
-        contents: prompt,
-        config: { responseMimeType: "application/json", thinkingConfig: { thinkingBudget: 0 } }
-      });
+      let jsonStr = await aiService.generateContent(prompt);
+      jsonStr = jsonStr.trim();
       
-      let jsonStr = response.text.trim();
       // It's better to rely on the model following the no-markdown instruction.
       // This regex is a fallback.
       const fenceRegex = /^```(\w*)?\s*\n?(.*?)\n?\s*```$/s;
@@ -132,12 +126,13 @@ Return the response as a JSON array of objects. Ensure valid JSON format. ABSOLU
 
   return (
     <>
-    <Card title={
-        <div className="flex items-center">
-            <Sparkles size={20} className="mr-2 text-accent_yellow" /> {/* Yellow/Gold icon */}
-            AI-Powered Airdrop Discovery
-        </div>
-    } actions={
+    <Card title="AI-Powered Airdrop Discovery">
+      <div className="flex items-center mb-3">
+        <Search size={20} className="mr-2 text-accent_yellow" />
+        <span className="text-lg font-semibold">AI-Powered Airdrop Discovery</span>
+      </div>
+      
+      <div className="flex justify-end mb-3">
         <Button 
             onClick={fetchSuggestions} 
             size="sm" 
@@ -145,10 +140,10 @@ Return the response as a JSON array of objects. Ensure valid JSON format. ABSOLU
             isLoading={isLoading} 
             className="bg-secondary-light text-secondary-dark hover:bg-purple-100 dark:text-primary dark:hover:bg-primary/20" 
         >
-            {isLoading ? undefined : <Brain size={16} className="mr-1.5"/>}
+            {isLoading ? undefined : <Search size={16} className="mr-1.5"/>}
             {isLoading ? 'Discovering...' : 'Find New Airdrops'}
         </Button>
-    }>
+      </div>
       <p className="text-xs text-muted-dark mb-3"> {/* Light gray text */}
         Let AI scan for potential (fictional, for demo) airdrop opportunities based on common patterns. Add promising ones to your watchlist.
       </p>

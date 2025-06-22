@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../authMiddleware');
+const storage = require('../utils/storage');
 
 let walletsStore = {}; // Store wallets per user: { userId: [wallet1, wallet2] }
 
@@ -50,74 +51,114 @@ router.get('/logs/recent', async (req, res) => {
 
 // GET /api/v1/wallets
 router.get('/', async (req, res) => {
-  const userWallets = await simulateDBRead(walletsStore[req.user.id]);
-  res.json(userWallets);
+  try {
+    const userId = req.user.id;
+    const wallets = await storage.getUserData(userId, 'wallets');
+    res.json(wallets);
+  } catch (error) {
+    console.error('Error fetching wallets:', error);
+    res.status(500).json({ message: 'Error fetching wallets' });
+  }
 });
 
 // POST /api/v1/wallets
 router.post('/', async (req, res) => {
-  const { name, address, blockchain, group } = req.body;
-  if (!name || !address || !blockchain) {
-    return res.status(400).json({ message: 'Name, address, and blockchain are required' });
+  try {
+    const userId = req.user.id;
+    const walletData = req.body;
+    
+    // Generate unique ID
+    walletData.id = `wallet_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    walletData.userId = userId;
+    walletData.createdAt = new Date().toISOString();
+    walletData.updatedAt = new Date().toISOString();
+    
+    // Initialize arrays if they don't exist
+    walletData.transactionHistory = walletData.transactionHistory || [];
+    walletData.nftPortfolio = walletData.nftPortfolio || [];
+    walletData.tokenBalances = walletData.tokenBalances || [];
+    
+    // Get existing wallets and add new one
+    const wallets = await storage.getUserData(userId, 'wallets');
+    wallets.push(walletData);
+    
+    await storage.saveUserData(userId, 'wallets', wallets);
+    
+    res.status(201).json(walletData);
+  } catch (error) {
+    console.error('Error creating wallet:', error);
+    res.status(500).json({ message: 'Error creating wallet' });
   }
-  const newWallet = {
-    id: `wallet_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-    userId: req.user.id, // Associate with user
-    name, address, blockchain,
-    group: group || '',
-    balanceSnapshots: [], gasLogs: [], interactionLogs: [], nftPortfolio: [],
-    isArchived: false, transactionHistory: [], autoBalanceFetchEnabled: false,
-    lastSynced: null
-  };
-  walletsStore[req.user.id].push(newWallet);
-  await simulateDBWrite();
-  res.status(201).json(newWallet);
 });
 
-// GET /api/v1/wallets/:walletId
-router.get('/:walletId', async (req, res) => {
-  const userWallets = await simulateDBRead(walletsStore[req.user.id]);
-  const wallet = userWallets.find(w => w.id === req.params.walletId);
-  if (wallet) res.json(wallet);
-  else res.status(404).json({ message: 'Wallet not found' });
+// GET /api/v1/wallets/:id
+router.get('/:id', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const walletId = req.params.id;
+    const wallets = await storage.getUserData(userId, 'wallets');
+    const wallet = wallets.find(w => w.id === walletId);
+    
+    if (!wallet) {
+      return res.status(404).json({ message: 'Wallet not found' });
+    }
+    
+    res.json(wallet);
+  } catch (error) {
+    console.error('Error fetching wallet:', error);
+    res.status(500).json({ message: 'Error fetching wallet' });
+  }
 });
 
-// PUT /api/v1/wallets/:walletId
-router.put('/:walletId', async (req, res) => {
-  const userWallets = walletsStore[req.user.id];
-  const walletIndex = userWallets.findIndex(w => w.id === req.params.walletId);
-  if (walletIndex > -1) {
-    // Preserve existing nested arrays if not provided in req.body
-    const updatedWallet = { 
-        ...userWallets[walletIndex], 
-        ...req.body, 
-        id: userWallets[walletIndex].id, 
-        userId: userWallets[walletIndex].userId,
-        // Explicitly carry over arrays if they are not part of req.body
-        balanceSnapshots: req.body.balanceSnapshots !== undefined ? req.body.balanceSnapshots : userWallets[walletIndex].balanceSnapshots,
-        gasLogs: req.body.gasLogs !== undefined ? req.body.gasLogs : userWallets[walletIndex].gasLogs,
-        interactionLogs: req.body.interactionLogs !== undefined ? req.body.interactionLogs : userWallets[walletIndex].interactionLogs,
-        nftPortfolio: req.body.nftPortfolio !== undefined ? req.body.nftPortfolio : userWallets[walletIndex].nftPortfolio,
-        transactionHistory: req.body.transactionHistory !== undefined ? req.body.transactionHistory : userWallets[walletIndex].transactionHistory,
+// PUT /api/v1/wallets/:id
+router.put('/:id', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const walletId = req.params.id;
+    const updateData = req.body;
+    
+    const wallets = await storage.getUserData(userId, 'wallets');
+    const walletIndex = wallets.findIndex(w => w.id === walletId);
+    
+    if (walletIndex === -1) {
+      return res.status(404).json({ message: 'Wallet not found' });
+    }
+    
+    // Update wallet
+    wallets[walletIndex] = {
+      ...wallets[walletIndex],
+      ...updateData,
+      updatedAt: new Date().toISOString()
     };
-    userWallets[walletIndex] = updatedWallet;
-    await simulateDBWrite();
-    res.json(userWallets[walletIndex]);
-  } else {
-    res.status(404).json({ message: 'Wallet not found' });
+    
+    await storage.saveUserData(userId, 'wallets', wallets);
+    
+    res.json(wallets[walletIndex]);
+  } catch (error) {
+    console.error('Error updating wallet:', error);
+    res.status(500).json({ message: 'Error updating wallet' });
   }
 });
 
-// DELETE /api/v1/wallets/:walletId
-router.delete('/:walletId', async (req, res) => {
-  const userWallets = walletsStore[req.user.id];
-  const initialLength = userWallets.length;
-  walletsStore[req.user.id] = userWallets.filter(w => w.id !== req.params.walletId);
-  if (walletsStore[req.user.id].length < initialLength) {
-    await simulateDBWrite();
-    res.status(200).json({ message: 'Wallet deleted successfully' });
-  } else {
-    res.status(404).json({ message: 'Wallet not found' });
+// DELETE /api/v1/wallets/:id
+router.delete('/:id', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const walletId = req.params.id;
+    
+    const wallets = await storage.getUserData(userId, 'wallets');
+    const filteredWallets = wallets.filter(w => w.id !== walletId);
+    
+    if (filteredWallets.length === wallets.length) {
+      return res.status(404).json({ message: 'Wallet not found' });
+    }
+    
+    await storage.saveUserData(userId, 'wallets', filteredWallets);
+    
+    res.json({ message: 'Wallet deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting wallet:', error);
+    res.status(500).json({ message: 'Error deleting wallet' });
   }
 });
 
@@ -265,6 +306,73 @@ router.post('/:walletId/sync-data', async (req, res) => {
   
   await simulateDBWrite();
   res.json({ message: 'Wallet data sync triggered (conceptual)', wallet });
+});
+
+// POST /api/v1/wallets/:id/transactions - Add transaction to wallet
+router.post('/:id/transactions', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const walletId = req.params.id;
+    const transactionData = req.body;
+    
+    const wallets = await storage.getUserData(userId, 'wallets');
+    const walletIndex = wallets.findIndex(w => w.id === walletId);
+    
+    if (walletIndex === -1) {
+      return res.status(404).json({ message: 'Wallet not found' });
+    }
+    
+    // Generate transaction ID
+    transactionData.id = `tx_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    transactionData.createdAt = new Date().toISOString();
+    
+    // Initialize transaction history if it doesn't exist
+    if (!wallets[walletIndex].transactionHistory) {
+      wallets[walletIndex].transactionHistory = [];
+    }
+    
+    wallets[walletIndex].transactionHistory.push(transactionData);
+    wallets[walletIndex].updatedAt = new Date().toISOString();
+    
+    await storage.saveUserData(userId, 'wallets', wallets);
+    
+    res.status(201).json(transactionData);
+  } catch (error) {
+    console.error('Error adding transaction to wallet:', error);
+    res.status(500).json({ message: 'Error adding transaction to wallet' });
+  }
+});
+
+// GET /api/v1/wallets/:id/health - Get wallet health check
+router.get('/:id/health', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const walletId = req.params.id;
+    const wallets = await storage.getUserData(userId, 'wallets');
+    const wallet = wallets.find(w => w.id === walletId);
+    
+    if (!wallet) {
+      return res.status(404).json({ message: 'Wallet not found' });
+    }
+    
+    // Mock health check data - in real implementation, this would check actual wallet status
+    const healthData = {
+      walletId: wallet.id,
+      address: wallet.address,
+      network: wallet.network,
+      status: 'healthy',
+      lastChecked: new Date().toISOString(),
+      balance: wallet.balance || '0',
+      transactionCount: wallet.transactionHistory?.length || 0,
+      nftCount: wallet.nftPortfolio?.length || 0,
+      tokenCount: wallet.tokenBalances?.length || 0
+    };
+    
+    res.json(healthData);
+  } catch (error) {
+    console.error('Error checking wallet health:', error);
+    res.status(500).json({ message: 'Error checking wallet health' });
+  }
 });
 
 module.exports = router;

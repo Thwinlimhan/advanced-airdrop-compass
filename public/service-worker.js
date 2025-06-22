@@ -1,7 +1,17 @@
-
 const CACHE_NAME = 'airdrop-compass-cache-v1.12'; // Incremented version
 const OFFLINE_URL = 'offline.html';
 const API_CACHE_NAME = 'airdrop-compass-api-cache-v1.7'; // Incremented API Cache version
+
+// Check if we're in development mode
+const isDevelopment = self.location.hostname === 'localhost' && 
+                     (self.location.port === '5173' || 
+                      self.location.port === '5174' || 
+                      self.location.port === '5175' || 
+                      self.location.port === '5176' ||
+                      self.location.port === '5177' ||
+                      self.location.port === '5178' ||
+                      self.location.port === '5179' ||
+                      self.location.port === '5180');
 
 const URLS_TO_CACHE = [
   '/',
@@ -23,6 +33,14 @@ const URLS_TO_CACHE = [
 
 self.addEventListener('install', (event) => {
   console.log('[ServiceWorker] Install event in progress.');
+  
+  // Skip service worker installation during development
+  if (isDevelopment) {
+    console.log('[ServiceWorker] Development mode detected, skipping installation.');
+    event.waitUntil(self.skipWaiting());
+    return;
+  }
+  
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
@@ -47,6 +65,14 @@ self.addEventListener('install', (event) => {
 
 self.addEventListener('activate', (event) => {
   console.log('[ServiceWorker] Activate event in progress.');
+  
+  // Skip service worker activation during development
+  if (isDevelopment) {
+    console.log('[ServiceWorker] Development mode detected, skipping activation.');
+    event.waitUntil(self.clients.claim());
+    return;
+  }
+  
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
@@ -66,6 +92,13 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const { request } = event;
+
+  // Skip service worker functionality during development
+  if (isDevelopment) {
+    console.log('[ServiceWorker] Development mode detected, skipping service worker for:', request.url);
+    event.respondWith(fetch(request));
+    return;
+  }
 
   // Navigate requests: try network, then cache, then offline page
   if (request.mode === 'navigate') {
@@ -148,15 +181,61 @@ self.addEventListener('fetch', (event) => {
                     console.log(`[ServiceWorker] Caching new static asset: ${request.url}`);
                     cache.put(request, networkResponse.clone());
                     return networkResponse;
+                }).catch(error => {
+                  console.warn('[ServiceWorker] Failed to cache static asset:', request.url, error);
+                  return networkResponse;
                 });
              }
           }
           return networkResponse;
+        }).catch(error => {
+          console.warn('[ServiceWorker] Static asset fetch failed, not in cache:', request.url, error);
+          return new Response('Asset not available', {
+            status: 404,
+            headers: { 'Content-Type': 'text/plain' }
+          });
         });
       }).catch(error => {
-        console.warn('[ServiceWorker] Static asset fetch failed, not in cache:', request.url, error);
+        console.warn('[ServiceWorker] Cache match failed for static asset:', request.url, error);
+        return new Response('Asset not available', {
+          status: 404,
+          headers: { 'Content-Type': 'text/plain' }
+        });
       })
     );
     return;
   }
+
+  // Default: Network first, then cache
+  event.respondWith(
+    fetch(request).then((networkResponse) => {
+      console.log(`[ServiceWorker] Serving from network: ${request.url}`);
+      return networkResponse;
+    }).catch(error => {
+      console.log(`[ServiceWorker] Network failed for ${request.url}, trying cache. Error:`, error);
+      return caches.match(request).then((cachedResponse) => {
+        if (cachedResponse) {
+          console.log(`[ServiceWorker] Serving from cache: ${request.url}`);
+          return cachedResponse;
+        }
+        console.warn(`[ServiceWorker] Request for ${request.url} failed and not in cache.`);
+        return new Response('Resource not available', {
+          status: 404,
+          headers: { 'Content-Type': 'text/plain' }
+        });
+      }).catch(cacheError => {
+        console.warn(`[ServiceWorker] Cache match also failed for ${request.url}:`, cacheError);
+        return new Response('Resource not available', {
+          status: 404,
+          headers: { 'Content-Type': 'text/plain' }
+        });
+      });
+    }).catch(finalError => {
+      console.error(`[ServiceWorker] All handlers failed for ${request.url}:`, finalError);
+      return new Response('Service Worker Error', {
+        status: 500,
+        headers: { 'Content-Type': 'text/plain' }
+      });
+    })
+  );
 });

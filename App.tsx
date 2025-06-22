@@ -1,19 +1,19 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { BrowserRouter, Routes, Route as RouterRoute, useLocation, useNavigate, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
-import { AppProvider, useAppContext } from './contexts/AppContext';
 import { ToastProvider } from './contexts/ToastContext';
+import { StoreProvider } from './stores/StoreProvider';
 import { Sidebar } from './components/layout/Sidebar';
-import { Navbar } from './components/layout/Navbar';
+import Navbar from './components/layout/Navbar';
 import { ToastContainer } from './components/ui/ToastContainer';
 import { GlobalSearchModal } from './components/ui/GlobalSearchModal';
 import { CommandPaletteModal } from './components/ui/CommandPaletteModal';
 import { AIChatbotModal } from './components/ai/AIChatbotModal';
-import { DashboardPage } from './features/dashboard/DashboardPage';
+import DashboardPage from './features/dashboard/DashboardPage';
 import { AirdropListPage } from './features/airdrops/AirdropListPage';
 import { AirdropDetailPage } from './features/airdrops/AirdropDetailPage';
 import { RecurringTasksPage } from './features/tasks/RecurringTasksPage';
-import { EnhancedLearningPage as LearningPage } from './features/learning/LearningPage';
+import { LearningPage } from './features/learning/LearningPage';
 import { SybilPreventionGuidePage } from './features/learning/SybilPreventionGuide';
 import { AIStrategyPage } from './features/ai/AIStrategyPage';
 import { AIAnalystPage } from './features/ai/AIAnalystPage';
@@ -29,17 +29,31 @@ import { ReportsPage } from './features/reports/ReportsPage';
 import { AnalyticsHubPage } from './features/analytics/AnalyticsHubPage';
 import { AggregatorPage } from './features/tools/AggregatorPage';
 import { NotificationCenterPage } from './features/notifications/NotificationCenterPage';
-import { LoginPage } from './features/auth/LoginPage';
-import { RegisterPage } from './features/auth/RegisterPage';
-import { ProtectedRoute } from './components/auth/ProtectedRoute';
-import { UserProfilePage } from './features/profile/UserProfilePage'; 
+import LoginPage from './features/auth/LoginPage';
+import RegisterPage from './features/auth/RegisterPage';
+import ProtectedRoute from './components/auth/ProtectedRoute';
+import { UserProfilePage } from './features/profile/UserProfilePage';
+import HelpPage from './features/help/HelpPage';
 import { NAVIGATION_ITEMS, LEARNING_HUB_SUB_NAV, DEFAULT_SETTINGS } from './constants';
 import { SearchResultItem, Command } from './types';
 import { useTranslation } from './hooks/useTranslation';
-import { useTheme } from './hooks/useTheme';
+import { useTheme } from './contexts/ThemeContext';
 import { Button } from './design-system/components/Button';
 import { PlusCircle, Cog as AutomationIcon, X as DismissIcon, MessageSquare, Search as SearchIcon, Palette, FileText } from 'lucide-react';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { useAuthStore } from './stores/authStore';
+import { useUIStore } from './stores/uiStore';
+import { useWalletStore } from './stores/walletStore';
+import { useAirdropStore } from './stores/airdropStore';
+import { useRecurringTaskStore } from './stores/recurringTaskStore';
+import { useLearningResourceStore } from './stores/learningResourceStore';
+import { useStrategyNoteStore } from './stores/strategyNoteStore';
+import { useUserAlertStore } from './stores/userAlertStore';
+import { useSettingsStore } from './stores/settingsStore';
+import { useWatchlistStore } from './stores/watchlistStore';
+import { useAirdropTemplateStore } from './stores/airdropTemplateStore';
+import { useYieldPositionStore } from './stores/yieldPositionStore';
+import { useAiStrategyStore } from './stores/aiStrategyStore';
 
 let deferredInstallPrompt: Event | null = null;
 
@@ -56,14 +70,25 @@ export function clearDeferredInstallPrompt(): void {
     deferredInstallPrompt = null;
 }
 
-
 const AppContent: React.FC = () => {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth >= 1024);
   const location = useLocation();
   const navigate = useNavigate();
-  const { appData, isAuthenticated } = useAppContext();
+  const { isAuthenticated } = useAuthStore();
+  const { toggleSidebar } = useUIStore();
+  const { wallets } = useWalletStore();
+  const { airdrops } = useAirdropStore();
+  const { recurringTasks } = useRecurringTaskStore();
+  const { learningResources } = useLearningResourceStore();
+  const { strategyNotes } = useStrategyNoteStore();
+  const { userAlerts } = useUserAlertStore();
+  const { settings } = useSettingsStore();
+  const { watchlist } = useWatchlistStore();
+  const { airdropTemplates } = useAirdropTemplateStore();
+  const { yieldPositions } = useYieldPositionStore();
+  const { savedAiStrategies } = useAiStrategyStore();
+  
   const { t, currentLanguage, isLoading: isLangLoading } = useTranslation();
-  const { theme, toggleTheme } = useTheme();
+  const { actualTheme, toggleTheme } = useTheme();
 
   const [isGlobalSearchModalOpen, setIsGlobalSearchModalOpen] = useState(false);
   const [globalSearchTerm, setGlobalSearchTerm] = useState('');
@@ -71,15 +96,10 @@ const AppContent: React.FC = () => {
   const [showPWAInstallBanner, setShowPWAInstallBanner] = useState(false);
   const [isChatbotModalOpen, setIsChatbotModalOpen] = useState(false);
 
-
-  const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
-
   useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth < 1024) {
-        setIsSidebarOpen(false);
-      } else {
-        setIsSidebarOpen(true);
+        // Sidebar will be handled by the UI store
       }
     };
     window.addEventListener('resize', handleResize);
@@ -94,7 +114,6 @@ const AppContent: React.FC = () => {
     if (currentPath === '/register') return t('register_title', { defaultValue: 'Register' });
     if (currentPath === '/profile') return t('profile_page_title', {defaultValue: 'User Profile'});
 
-
     const mainNavItem = NAVIGATION_ITEMS.find(item => {
         if (item.path === '/') return currentPath === '/';
         return currentPath.startsWith(item.path) && (currentPath === item.path || currentPath.charAt(item.path.length) === '/');
@@ -106,8 +125,8 @@ const AppContent: React.FC = () => {
         if (mainNavItem.id === 'airdrop_tracker' && currentPath.startsWith('/airdrops/') && currentPath !== '/airdrops') {
             const pathParts = currentPath.split('/');
             const airdropId = pathParts[2];
-            const airdrop = appData.airdrops.find(a => a.id === airdropId);
-            titleKeyOrDynamic = airdrop ? `${airdrop.projectName} Details` : t(mainNavItem.label);
+            // Note: We'll need to get airdrops from the store when needed
+            titleKeyOrDynamic = t(mainNavItem.label);
         }
         else if (mainNavItem.id === 'learning_platform' && currentPath.startsWith('/learning/')) {
             const subPathKey = currentPath.split('/')[2];
@@ -125,7 +144,7 @@ const AppContent: React.FC = () => {
     }
     document.title = `${titleKeyOrDynamic} | ${t('app_name')}`;
     return titleKeyOrDynamic;
-  }, [location, appData.airdrops, t, currentLanguage]);
+  }, [location, t, currentLanguage]);
 
   const handleOpenGlobalSearch = useCallback(() => setIsGlobalSearchModalOpen(true), []);
   const handleCloseGlobalSearch = useCallback(() => setIsGlobalSearchModalOpen(false), []);
@@ -152,7 +171,6 @@ const AppContent: React.FC = () => {
 
   useEffect(() => {
     const checkPWAInstallReady = (event?: Event) => { 
-      // Use event.detail if it's from the custom event, otherwise check global deferredInstallPrompt
       const currentPrompt = event && (event as CustomEvent).detail ? (event as CustomEvent).detail : getDeferredInstallPrompt();
       if (currentPrompt) {
         const dismissedPreviously = localStorage.getItem('pwaInstallDismissed') === 'true';
@@ -199,161 +217,167 @@ const AppContent: React.FC = () => {
             icon: navItem.icon,
             action: () => { navigate(navItem.path); setIsCommandPaletteOpen(false); }
         })),
-        ...LEARNING_HUB_SUB_NAV.map(subItem => ({ id: `nav_learning_${subItem.id}`, name: t(subItem.label), category: 'Navigation (Learning)', icon: subItem.icon, action: () => { navigate(subItem.path); setIsCommandPaletteOpen(false); } })),
-        { id: 'open_global_search', name: 'Open Global Search', category: 'Actions', icon: SearchIcon, action: () => { setIsGlobalSearchModalOpen(true); setIsCommandPaletteOpen(false); } },
-        { id: 'toggle_theme', name: `Toggle Theme (Current: ${theme})`, category: 'Actions', icon: Palette, action: () => { toggleTheme(); setIsCommandPaletteOpen(false); } },
-        { id: 'open_chatbot', name: "Open AI Chat Assistant", category: "AI Tools", icon: MessageSquare, action: () => { setIsChatbotModalOpen(true); setIsCommandPaletteOpen(false); }},
+        {
+            id: 'toggle_theme',
+            name: t('toggle_theme', {defaultValue: 'Toggle Theme'}),
+            category: 'Settings',
+            icon: Palette,
+            action: toggleTheme
+        },
+        {
+            id: 'global_search',
+            name: t('global_search', {defaultValue: 'Global Search'}),
+            category: 'Search',
+            icon: SearchIcon,
+            action: handleOpenGlobalSearch
+        },
+        {
+            id: 'ai_chatbot',
+            name: t('ai_chatbot', {defaultValue: 'AI Chatbot'}),
+            category: 'AI',
+            icon: MessageSquare,
+            action: () => setIsChatbotModalOpen(true)
+        }
     ];
-    if (isAuthenticated) {
-        baseCommands.push(
-            { id: 'nav_automation_settings', name: t('nav_automation_settings'), category: 'Navigation (Settings)', icon: AutomationIcon, action: () => { navigate('/settings/automation'); setIsCommandPaletteOpen(false); } },
-            { id: 'add_airdrop', name: t('add_new_airdrop_button'), category: 'Actions', icon: PlusCircle, action: () => { navigate('/airdrops', {state: { openAddModal: true }}); setIsCommandPaletteOpen(false); } },
-            { id: 'add_wallet', name: t('add_new_wallet_button'), category: 'Actions', icon: PlusCircle, action: () => { navigate('/wallets', {state: { openAddModal: true }}); setIsCommandPaletteOpen(false); } },
-            { id: 'add_task', name: t('add_new_task_button'), category: 'Actions', icon: PlusCircle, action: () => { navigate('/tasks', {state: { openAddModal: true }}); setIsCommandPaletteOpen(false); } },
-            { id: 'add_yield_position', name: 'Add Yield Position', category: 'Actions', icon: PlusCircle, action: () => { navigate('/yield-tracker', {state: { openAddModal: true }}); setIsCommandPaletteOpen(false); } },
-            { id: 'add_airdrop_template', name: t('settings_create_template_button'), category: 'Actions', icon: FileText, action: () => { navigate('/settings', {state: { openTemplateModal: true }}); setIsCommandPaletteOpen(false); } },
-        );
-    }
+
     return baseCommands;
-  }, [t, theme, navigate, isAuthenticated]);
-
-
-  const GenericFallback = <div className="p-4 text-center text-red-500">{t('common_error_loading_section', {defaultValue: "An error occurred loading this section. Please try refreshing."})}</div>;
-
-  useEffect(() => {
-    const rootStyle = document.documentElement.style;
-    const settingsFontFamily = appData.settings.fontFamily || DEFAULT_SETTINGS.fontFamily!;
-    const accentColorHex = appData.settings.accentColor || DEFAULT_SETTINGS.accentColor!;
-    const themeColorMeta = document.getElementById('theme-color-meta') as HTMLMetaElement | null;
-
-    const existingFontLink = document.getElementById('dynamic-google-font');
-    if (existingFontLink) {
-      existingFontLink.remove();
-    }
-
-    let fontToApply = 'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"'; 
-
-    if (settingsFontFamily !== "System Default") {
-      const fontName = settingsFontFamily; 
-      const fontUrl = `https://fonts.googleapis.com/css2?family=${fontName.replace(' ', '+')}:wght@400;500;600;700;800&display=swap`;
-      const newLink = document.createElement('link');
-      newLink.id = 'dynamic-google-font';
-      newLink.rel = 'stylesheet';
-      newLink.href = fontUrl;
-      document.head.appendChild(newLink);
-      fontToApply = `'${fontName}', ${fontToApply}`;
-    }
-    rootStyle.setProperty('--font-family-sans', fontToApply);
-
-    const hexToRgbArray = (hex: string): [number, number, number] | null => {
-      const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-      return result ? [parseInt(result[1], 16), parseInt(result[2], 16), parseInt(result[3], 16)] : null;
-    };
-
-    const rgbArray = hexToRgbArray(accentColorHex);
-    if (rgbArray) {
-      rootStyle.setProperty('--color-accent-rgb', rgbArray.join(', '));
-    } else {
-      rootStyle.setProperty('--color-accent-rgb', '136, 90, 248');
-    }
-    if(themeColorMeta) {
-        themeColorMeta.content = accentColorHex;
-    }
-  }, [appData.settings.fontFamily, appData.settings.accentColor]);
+  }, [isAuthenticated, t, navigate, toggleTheme, handleOpenGlobalSearch]);
 
   if (isLangLoading) {
-      return <div className="flex h-full w-full items-center justify-center bg-background-light dark:bg-background-dark text-text-light dark:text-text-dark">{t('common_loading', {defaultValue: 'Loading...'})} {t('loading_translations_suffix', {defaultValue: 'application and translations...'})}</div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-surface">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-accent mx-auto"></div>
+          <p className="mt-4 text-secondary">Loading...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="flex h-full bg-background-light dark:bg-background-dark">
-      {isAuthenticated && <Sidebar />}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {isAuthenticated && <Navbar toggleSidebar={toggleSidebar} currentPageTitle={pageTitle} onSearchIconClick={handleOpenGlobalSearch} isSearchVisible={isGlobalSearchModalOpen || globalSearchTerm.length > 0} searchTerm={globalSearchTerm} onSearchTermChange={setGlobalSearchTerm} onClearSearch={handleClearSearch} />}
-        <main className="flex-1 overflow-x-hidden overflow-y-auto">
-          <Routes>
-            <RouterRoute path="/login" element={<LoginPage />} />
-            <RouterRoute path="/register" element={<RegisterPage />} />
-            
-            <RouterRoute path="/" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><DashboardPage /></ErrorBoundary></ProtectedRoute>} />
-            <RouterRoute path="/profile" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><UserProfilePage /></ErrorBoundary></ProtectedRoute>} />
-            <RouterRoute path="/watchlist" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><WatchlistPage /></ErrorBoundary></ProtectedRoute>} />
-            <RouterRoute path="/achievements" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><AchievementsPage /></ErrorBoundary></ProtectedRoute>} />
-            <RouterRoute path="/notifications" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><NotificationCenterPage /></ErrorBoundary></ProtectedRoute>} />
-            <RouterRoute path="/airdrops" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><AirdropListPage /></ErrorBoundary></ProtectedRoute>} />
-            <RouterRoute path="/airdrops/:airdropId" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><AirdropDetailPage /></ErrorBoundary></ProtectedRoute>} />
-            <RouterRoute path="/tasks" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><RecurringTasksPage /></ErrorBoundary></ProtectedRoute>} />
-            <RouterRoute path="/portfolio" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><PortfolioPage /></ErrorBoundary></ProtectedRoute>} />
-            <RouterRoute path="/yield-tracker" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><YieldTrackerPage /></ErrorBoundary></ProtectedRoute>} />
-            <RouterRoute path="/reports" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><ReportsPage /></ErrorBoundary></ProtectedRoute>} />
-
-            <RouterRoute path="/learning" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><LearningPage /></ErrorBoundary></ProtectedRoute>} />
-            <RouterRoute path="/learning/sybilPrevention" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><SybilPreventionGuidePage /></ErrorBoundary></ProtectedRoute>} />
-            <RouterRoute path="/learning/aiStrategy" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><AIStrategyPage /></ErrorBoundary></ProtectedRoute>} />
-            <RouterRoute path="/learning/aiAnalyst" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><AIAnalystPage /></ErrorBoundary></ProtectedRoute>} />
-            <RouterRoute path="/learning/:subPage" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><LearningPage /></ErrorBoundary></ProtectedRoute>} />
-            <RouterRoute path="/learning/:subPage/:itemId" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><LearningPage /></ErrorBoundary></ProtectedRoute>} />
-            <RouterRoute path="/analytics" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><AnalyticsHubPage /></ErrorBoundary></ProtectedRoute>} />
-
-            <RouterRoute path="/tools/aggregator" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><AggregatorPage /></ErrorBoundary></ProtectedRoute>} />
-
-            <RouterRoute path="/wallets" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><WalletManagerPage /></ErrorBoundary></ProtectedRoute>} />
-            <RouterRoute path="/settings" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><SettingsPage /></ErrorBoundary></ProtectedRoute>} />
-            <RouterRoute path="/settings/automation" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><AutomationSettingsPage /></ErrorBoundary></ProtectedRoute>} />
-            <RouterRoute path="/settings/designSystem" element={<ProtectedRoute><ErrorBoundary FallbackComponent={GenericFallback}><DesignSystemShowcase /></ErrorBoundary></ProtectedRoute>} />
-            
-            <RouterRoute path="*" element={<Navigate to={isAuthenticated ? "/" : "/login"} replace />} />
-
-          </Routes>
-        </main>
-      </div>
-      <ToastContainer />
-      {isAuthenticated && <GlobalSearchModal isOpen={isGlobalSearchModalOpen && !isCommandPaletteOpen} onClose={handleCloseGlobalSearch} searchTerm={globalSearchTerm} onResultClick={handleSearchResultClick} appData={appData} />}
-      {isAuthenticated && <CommandPaletteModal isOpen={isCommandPaletteOpen} onClose={() => setIsCommandPaletteOpen(false)} commands={commands} />}
-       {showPWAInstallBanner && (
-        <div className={`pwa-install-banner ${showPWAInstallBanner ? 'show' : ''}`}>
-          <span>{t('pwa_install_banner_text', { defaultValue: 'Install Airdrop Compass for a better experience!' })}</span>
-          <div>
-            <Button onClick={handlePWAInstall} className="install-btn">{t('pwa_install_button', { defaultValue: 'Install' })}</Button>
-            <button onClick={handleDismissPWAInstallBanner} className="dismiss-btn" aria-label={t('pwa_dismiss_button_aria', { defaultValue: 'Dismiss PWA install banner' })}>
-                <DismissIcon size={20} />
+    <div className="min-h-screen bg-background transition-colors duration-200">
+      {/* PWA Install Banner */}
+      {showPWAInstallBanner && (
+        <div className="fixed top-0 left-0 right-0 bg-blue-600 text-white p-4 z-50 flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <PlusCircle className="h-5 w-5" />
+            <span className="text-sm font-medium">
+              Install {t('app_name')} for a better experience
+            </span>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Button
+              onClick={handlePWAInstall}
+              variant="secondary"
+              size="sm"
+              className="bg-white text-blue-600 hover:bg-gray-100"
+            >
+              Install
+            </Button>
+            <button
+              onClick={handleDismissPWAInstallBanner}
+              className="text-white hover:text-gray-200"
+            >
+              <DismissIcon className="h-4 w-4" />
             </button>
           </div>
         </div>
       )}
-      {isAuthenticated && (
-        <>
-          <button
-            onClick={() => setIsChatbotModalOpen(true)}
-            className="fixed bottom-6 right-6 bg-primary text-white p-3.5 rounded-full shadow-lg hover:bg-opacity-80 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary dark:focus:ring-offset-background-dark transition-colors z-40"
-            aria-label={t('chatbot_open_button_aria', { defaultValue: 'Open AI Chat Assistant' })}
-            title={t('chatbot_open_button_aria', { defaultValue: 'Open AI Chat Assistant' })}
-          >
-            <MessageSquare size={24} />
-          </button>
-          <AIChatbotModal isOpen={isChatbotModalOpen} onClose={() => setIsChatbotModalOpen(false)} />
-        </>
-      )}
+
+      <div className="flex h-screen">
+        <Sidebar />
+        
+        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+          <Navbar />
+          
+          <main className="flex-1 overflow-y-auto p-2 sm:p-4 lg:p-6">
+            <ErrorBoundary>
+              <Routes>
+                <Route path="/login" element={<LoginPage />} />
+                <Route path="/register" element={<RegisterPage />} />
+                
+                <Route path="/" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+                <Route path="/airdrops" element={<ProtectedRoute><AirdropListPage /></ProtectedRoute>} />
+                <Route path="/airdrops/:id" element={<ProtectedRoute><AirdropDetailPage /></ProtectedRoute>} />
+                <Route path="/recurring-tasks" element={<ProtectedRoute><RecurringTasksPage /></ProtectedRoute>} />
+                <Route path="/learning" element={<ProtectedRoute><LearningPage /></ProtectedRoute>} />
+                <Route path="/learning/sybil-prevention" element={<ProtectedRoute><SybilPreventionGuidePage /></ProtectedRoute>} />
+                <Route path="/ai-strategy" element={<ProtectedRoute><AIStrategyPage /></ProtectedRoute>} />
+                <Route path="/ai-analyst" element={<ProtectedRoute><AIAnalystPage /></ProtectedRoute>} />
+                <Route path="/wallets" element={<ProtectedRoute><WalletManagerPage /></ProtectedRoute>} />
+                <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+                <Route path="/settings/automation" element={<ProtectedRoute><AutomationSettingsPage /></ProtectedRoute>} />
+                <Route path="/settings/design-system" element={<ProtectedRoute><DesignSystemShowcase /></ProtectedRoute>} />
+                <Route path="/portfolio" element={<ProtectedRoute><PortfolioPage /></ProtectedRoute>} />
+                <Route path="/watchlist" element={<ProtectedRoute><WatchlistPage /></ProtectedRoute>} />
+                <Route path="/yield" element={<ProtectedRoute><YieldTrackerPage /></ProtectedRoute>} />
+                <Route path="/achievements" element={<ProtectedRoute><AchievementsPage /></ProtectedRoute>} />
+                <Route path="/reports" element={<ProtectedRoute><ReportsPage /></ProtectedRoute>} />
+                <Route path="/analytics" element={<ProtectedRoute><AnalyticsHubPage /></ProtectedRoute>} />
+                <Route path="/tools" element={<ProtectedRoute><AggregatorPage /></ProtectedRoute>} />
+                <Route path="/notifications" element={<ProtectedRoute><NotificationCenterPage /></ProtectedRoute>} />
+                <Route path="/profile" element={<ProtectedRoute><UserProfilePage /></ProtectedRoute>} />
+                <Route path="/help" element={<ProtectedRoute><HelpPage /></ProtectedRoute>} />
+                
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </ErrorBoundary>
+          </main>
+        </div>
+      </div>
+
+      {/* Modals */}
+      <GlobalSearchModal
+        isOpen={isGlobalSearchModalOpen}
+        onClose={handleCloseGlobalSearch}
+        searchTerm={globalSearchTerm}
+        onResultClick={handleSearchResultClick}
+        appData={{
+          wallets: wallets,
+          airdrops: airdrops,
+          recurringTasks: recurringTasks,
+          learningResources: learningResources,
+          strategyNotes: strategyNotes,
+          userAlerts: userAlerts,
+          settings: settings || DEFAULT_SETTINGS,
+          watchlist: watchlist,
+          airdropTemplates: airdropTemplates,
+          yieldPositions: yieldPositions,
+          userBadges: [],
+          savedAiStrategies: savedAiStrategies
+        }}
+      />
+
+      <CommandPaletteModal
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        commands={commands}
+      />
+
+      <AIChatbotModal
+        isOpen={isChatbotModalOpen}
+        onClose={() => setIsChatbotModalOpen(false)}
+      />
+
+      <ToastContainer />
     </div>
   );
 };
 
 const App: React.FC = () => {
-  useEffect(() => {
-    // Service worker registration is now in index.html for earlier registration.
-  }, []);
-
   return (
-    <ThemeProvider>
-      <ToastProvider>
-        <AppProvider>
-          <BrowserRouter>
-            <AppContent />
-          </BrowserRouter>
-        </AppProvider>
-      </ToastProvider>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <ThemeProvider>
+          <ToastProvider>
+            <StoreProvider>
+              <AppContent />
+            </StoreProvider>
+          </ToastProvider>
+        </ThemeProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 };
 
-export { App as default };
+export default App;

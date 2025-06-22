@@ -5,7 +5,9 @@ import { formatCurrency, parseMonetaryValue } from '../../utils/formatting';
 import { BarChart2, Network, Layers, WalletCards as WalletIcon, Package, DollarSign, ArrowRight } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom'; // Added useNavigate
 import { CostDetailModal } from './CostDetailModal';
-import { useAppContext } from '../../contexts/AppContext';
+import { useAirdropStore } from '../../stores/airdropStore';
+import { useWalletStore } from '../../stores/walletStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { EnhancedBarChart as BarChart } from '../../components/charts/BarChart'; // New Import
 import { ChartData } from 'chart.js';
 import { DISTINCT_COLORS, CATEGORY_COLORS, NETWORK_COLORS } from '../../constants'; // Import color constants
@@ -34,7 +36,9 @@ export const CostAnalysisDisplay: React.FC<CostAnalysisDisplayProps> = ({
   costsByWallet,
   costsByAirdrop,
 }) => {
-  const { appData } = useAppContext();
+  const { airdrops } = useAirdropStore();
+  const { wallets } = useWalletStore();
+  const { settings } = useSettingsStore();
   const navigate = useNavigate(); // Initialize useNavigate
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [detailModalTitle, setDetailModalTitle] = useState('');
@@ -67,14 +71,14 @@ export const CostAnalysisDisplay: React.FC<CostAnalysisDisplayProps> = ({
     if (type === 'category') {
         const categoryItem = item as CostByCategoryItem;
         title = `Cost Details for Category: ${categoryItem.category}`;
-        appData.airdrops.forEach(ad => {
+        airdrops.forEach(ad => {
             ad.transactions.forEach(tx => {
                 if ((tx.category || defaultCategory) === categoryItem.category) {
                     items.push({ id: tx.id, date: tx.date, description: tx.notes || `Tx: ${tx.hash.substring(0,10)}...`, cost: parseMonetaryValue(tx.cost), type: 'Airdrop Tx', relatedItem: ad.projectName });
                 }
             });
         });
-        appData.wallets.forEach(w => {
+        wallets.forEach(w => {
             (w.interactionLogs || []).forEach(log => {
                 if ((log.category || log.type || defaultCategory) === categoryItem.category) {
                      items.push({ id: log.id, date: log.date, description: log.description, cost: parseMonetaryValue(log.cost), type: 'Interaction Log', relatedItem: w.name });
@@ -90,7 +94,7 @@ export const CostAnalysisDisplay: React.FC<CostAnalysisDisplayProps> = ({
     } else if (type === 'network') {
         const networkItem = item as CostByNetworkItem;
         title = `Cost Details for Network: ${networkItem.network}`;
-        appData.wallets.forEach(w => {
+        wallets.forEach(w => {
             (w.gasLogs || []).filter(gl => (gl.network || w.blockchain || 'Unknown/Other') === networkItem.network).forEach(log => {
                 items.push({id: log.id, date: log.date, description: log.description || 'Gas Fee', cost: parseMonetaryValue(log.amount), type: 'Gas Log', relatedItem: w.name});
             });
@@ -98,7 +102,7 @@ export const CostAnalysisDisplay: React.FC<CostAnalysisDisplayProps> = ({
                 items.push({id: log.id, date: log.date, description: log.description, cost: parseMonetaryValue(log.cost), type: 'Interaction Log', relatedItem: w.name});
             });
         });
-        appData.airdrops.forEach(ad => {
+        airdrops.forEach(ad => {
             if((ad.blockchain || 'Unknown/Other') === networkItem.network) {
                 ad.transactions.forEach(tx => {
                      items.push({id: tx.id, date: tx.date, description: tx.notes || `Tx: ${tx.hash.substring(0,10)}...`, cost: parseMonetaryValue(tx.cost), type: 'Airdrop Tx', relatedItem: ad.projectName});
@@ -117,7 +121,7 @@ export const CostAnalysisDisplay: React.FC<CostAnalysisDisplayProps> = ({
     } else if (type === 'wallet') {
         const walletItem = item as CostByWalletItem;
         title = `Cost Details for Wallet: ${walletItem.walletName}`;
-        const wallet = appData.wallets.find(w => w.id === walletItem.walletId);
+        const wallet = wallets.find(w => w.id === walletItem.walletId);
         if(wallet) {
             (wallet.gasLogs || []).forEach(log => {
                 items.push({id: log.id, date: log.date, description: log.description || 'Gas Fee', cost: parseMonetaryValue(log.amount), type: 'Gas Log'});
@@ -125,7 +129,7 @@ export const CostAnalysisDisplay: React.FC<CostAnalysisDisplayProps> = ({
             (wallet.interactionLogs || []).forEach(log => {
                 items.push({id: log.id, date: log.date, description: log.description, cost: parseMonetaryValue(log.cost), type: 'Interaction Log'});
             });
-             appData.airdrops.forEach(ad => {
+             airdrops.forEach(ad => {
                 ad.tasks.forEach(task => {
                     if(task.associatedWalletId === wallet.id && task.cost && parseMonetaryValue(task.cost) > 0 && !task.linkedGasLogId) { 
                         items.push({ id: task.id, date: task.completionDate || task.dueDate || new Date().toISOString(), description: task.description, cost: parseMonetaryValue(task.cost), type: 'Task Cost', relatedItem: ad.projectName });
@@ -163,7 +167,7 @@ export const CostAnalysisDisplay: React.FC<CostAnalysisDisplayProps> = ({
             <div className="h-80">
               <BarChart 
                 data={categoryChartData} 
-                settings={appData.settings}
+                settings={settings}
                 options={{ indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false } }, onClick: (event, elements) => { if(elements.length > 0) {const index = elements[0].index; openDetailModal(costsByCategory[index], 'category');}} }}
                 titleText="Top Categories by Cost"
               />
@@ -177,7 +181,7 @@ export const CostAnalysisDisplay: React.FC<CostAnalysisDisplayProps> = ({
              <div className="h-80">
                <BarChart
                 data={networkChartData}
-                settings={appData.settings}
+                settings={settings}
                 options={{ indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false } }, onClick: (event, elements) => { if(elements.length > 0) {const index = elements[0].index; openDetailModal(costsByNetwork[index], 'network');}} }}
                 titleText="Top Networks by Cost"
                />
@@ -194,7 +198,7 @@ export const CostAnalysisDisplay: React.FC<CostAnalysisDisplayProps> = ({
                  <div className="h-80">
                     <BarChart
                         data={walletChartData}
-                        settings={appData.settings}
+                        settings={settings}
                         options={{ indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false } }, onClick: (event, elements) => { if(elements.length > 0) {const index = elements[0].index; openDetailModal(costsByWallet[index], 'wallet');}} }}
                         titleText="Top 5 Wallets by Cost"
                     />
@@ -208,7 +212,7 @@ export const CostAnalysisDisplay: React.FC<CostAnalysisDisplayProps> = ({
                  <div className="h-80">
                     <BarChart
                         data={airdropChartData}
-                        settings={appData.settings}
+                        settings={settings}
                         options={{ indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false } }, onClick: (event, elements) => { if(elements.length > 0) {const index = elements[0].index; const airdrop = costsByAirdrop.filter(a => a.totalCost > 0)[index]; if(airdrop) navigate(`/airdrops/${airdrop.airdropId}`); }}}}
                         titleText="Top 5 Airdrops by Cost"
                     />

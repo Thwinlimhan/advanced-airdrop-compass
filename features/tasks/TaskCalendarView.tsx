@@ -3,14 +3,14 @@ import { RecurringTask, AirdropTask as SingleAirdropTask } from '../../types';
 import { Card } from '../../design-system/components/Card';
 import { Button } from '../../design-system/components/Button';
 import { ChevronLeft, ChevronRight, Circle } from 'lucide-react'; // Added Circle
-import { useAppContext } from '../../contexts/AppContext'; // Added to get all airdrop tasks
+import { useAirdropStore } from '../../stores/airdropStore'; // Added to get all airdrop tasks
 
 interface TaskCalendarViewProps {
   tasks: RecurringTask[]; // Only recurring tasks are passed now for main view
 }
 
 export const TaskCalendarView: React.FC<TaskCalendarViewProps> = ({ tasks: recurringTasks }) => {
-  const { appData } = useAppContext(); // Get all appData
+  const { airdrops } = useAirdropStore(); // Get all airdrops
   const [currentDate, setCurrentDate] = useState(new Date());
 
   const daysInMonth = (year: number, month: number): number => new Date(year, month + 1, 0).getDate();
@@ -40,7 +40,7 @@ export const TaskCalendarView: React.FC<TaskCalendarViewProps> = ({ tasks: recur
   });
 
   // Process airdrop tasks
-  appData.airdrops.forEach(airdrop => {
+  airdrops.forEach(airdrop => {
     if (!airdrop.isArchived) {
       const processAirdropTasksRecursive = (tasks: SingleAirdropTask[]) => {
         tasks.forEach(task => {

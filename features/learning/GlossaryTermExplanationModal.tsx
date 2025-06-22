@@ -3,9 +3,9 @@ import { Modal } from '../../design-system/components/Modal';
 import { Button } from '../../design-system/components/Button';
 import { AlertMessage } from '../../components/ui/AlertMessage';
 import { LearningResource } from '../../types';
-import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
-import { Brain, Loader2 } from 'lucide-react';
+import { BookOpen, Loader2, AlertTriangle } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
+import { aiService } from '../../utils/aiService';
 
 interface GlossaryTermExplanationModalProps {
   isOpen: boolean;
@@ -26,13 +26,13 @@ export const GlossaryTermExplanationModal: React.FC<GlossaryTermExplanationModal
 
   useEffect(() => {
     if (isOpen && term) {
-      if (!process.env.API_KEY) {
+      if (!aiService.isAvailable()) {
         setIsApiKeyMissing(true);
-        setError("API_KEY for AI features is not configured. Explanation feature is unavailable.");
-        setIsLoading(false); // Ensure loading is false if API key is missing
+        setError(`AI Explanation feature is unavailable because ${aiService.getProviderName()} is not configured.`);
+        setIsLoading(false); // Ensure loading is false if AI service is not available
         return;
       }
-      setIsApiKeyMissing(false); // API key is present
+      setIsApiKeyMissing(false); // AI service is available
       fetchExplanation(term);
     } else {
       setExplanation(null);
@@ -49,21 +49,13 @@ export const GlossaryTermExplanationModal: React.FC<GlossaryTermExplanationModal
     setError(null);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
-      
       const systemInstruction = "You are an expert lexicographer specializing in cryptocurrency and blockchain technology. For the given glossary term, provide a clear, detailed, and easy-to-understand explanation. Include examples if they help clarify the concept. Assume the user has some basic crypto knowledge but might not be familiar with this specific term. Focus on accuracy and educational value.";
       
       const prompt = `Explain the glossary term "${currentTerm.title}" which is defined as: "${currentTerm.content}". Provide a more detailed explanation or examples.`;
 
-      const response: GenerateContentResponse = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-preview-04-17',
-        contents: prompt,
-        config: {
-          systemInstruction: systemInstruction,
-        }
-      });
+      const fullPrompt = `${systemInstruction}\n\n${prompt}`;
+      let textResponse = await aiService.generateContent(fullPrompt);
       
-      let textResponse = response.text;
       const fenceRegex = /^```(\w*)?\s*\n?(.*?)\n?\s*```$/s;
       const match = textResponse.match(fenceRegex);
       if (match && match[2]) {
@@ -73,7 +65,7 @@ export const GlossaryTermExplanationModal: React.FC<GlossaryTermExplanationModal
       setExplanation(textResponse);
 
     } catch (err) {
-      console.error("Error calling Gemini API for glossary explanation:", err);
+      console.error("Error calling AI service for glossary explanation:", err);
       const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
       setError(`Failed to get explanation: ${errorMessage}`);
       addToast(`Error fetching explanation: ${errorMessage}`, 'error');
@@ -85,18 +77,18 @@ export const GlossaryTermExplanationModal: React.FC<GlossaryTermExplanationModal
   if (!isOpen || !term) return null;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={
-      <div className="flex items-center">
-        <Brain size={20} className="mr-2 text-indigo-500" />
-        AI Explanation for: {term.title}
-      </div>
-    } size="lg">
+    <Modal isOpen={isOpen} onClose={onClose} title={`AI Explanation for: ${term.title}`} size="lg">
       <div className="py-2">
+        <div className="flex items-center mb-3">
+          <BookOpen size={20} className="mr-2 text-indigo-500" />
+          <span className="text-lg font-semibold">AI Explanation</span>
+        </div>
+        
         <h4 className="text-md font-semibold text-gray-700 dark:text-gray-300 mb-1">Original Definition:</h4>
         <p className="text-sm text-gray-600 dark:text-gray-400 italic mb-4 p-2 bg-gray-50 dark:bg-gray-750 rounded-md">{term.content}</p>
         
         {isApiKeyMissing && (
-            <AlertMessage type="warning" title="API Key Missing" message="AI Explanation feature requires an API_KEY to be configured. This feature is currently disabled." className="mb-4" />
+            <AlertMessage type="warning" title="AI Service Unavailable" message={`AI Explanation feature requires ${aiService.getProviderName()} to be configured. This feature is currently disabled.`} className="mb-4" />
         )}
         {isLoading && (
           <div className="flex items-center justify-center py-6">

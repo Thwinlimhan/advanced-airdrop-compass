@@ -5,7 +5,7 @@ import { Button } from '../../design-system/components/Button';
 import { FarmingStrategyModal } from './FarmingStrategyModal';
 import { Lightbulb, Trash2, Eye } from 'lucide-react';
 import { useTranslation } from '../../hooks/useTranslation';
-import { useAppContext } from '../../contexts/AppContext';
+import { useAiStrategyStore } from '../../stores/aiStrategyStore';
 import { SavedAiFarmingStrategy } from '../../types';
 import { useToast } from '../../hooks/useToast';
 import { AIStrategyAdvisor } from '../learning/AIStrategyAdvisor'; // Assuming it's moved here
@@ -14,10 +14,10 @@ export const AIStrategyPage: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false); // For generating NEW strategy
   const [viewingStrategy, setViewingStrategy] = useState<SavedAiFarmingStrategy | null>(null); // For viewing existing
   const { t } = useTranslation();
-  const { appData, deleteSavedAiStrategy } = useAppContext();
+  const { savedAiStrategies, deleteSavedAiStrategy } = useAiStrategyStore();
   const { addToast } = useToast();
 
-  const savedStrategies = appData.savedAiStrategies || [];
+  const savedStrategies = savedAiStrategies || [];
 
   const handleViewStrategy = (strategy: SavedAiFarmingStrategy) => {
     setViewingStrategy(strategy);

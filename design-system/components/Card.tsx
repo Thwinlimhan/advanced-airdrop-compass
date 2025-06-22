@@ -65,21 +65,29 @@ const variantClasses = {
 export const Card = forwardRef<HTMLDivElement, CardProps>(({
   variant = 'default',
   padding = 'md',
-  rounded = 'lg',
-  shadow = 'sm',
+  rounded = 'md',
+  shadow = 'md',
   interactive = false,
   loading = false,
   className = '',
   children,
   ...props
 }, ref) => {
-  const { config } = useTheme();
+  // Use theme context with fallback to prevent errors when used outside ThemeProvider
+  let themeConfig;
+  try {
+    const theme = useTheme();
+    themeConfig = theme.config;
+  } catch (error) {
+    // Fallback when theme context is not available
+    themeConfig = { reducedMotion: false };
+  }
 
   const baseClasses = `
     relative overflow-hidden
     transition-all duration-200 ease-in-out
     ${interactive ? 'cursor-pointer hover:shadow-lg hover:-translate-y-1' : ''}
-    ${config.reducedMotion ? '' : 'transition-all duration-200'}
+    ${themeConfig.reducedMotion ? '' : 'transition-all duration-200'}
     ${loading ? 'pointer-events-none' : ''}
   `;
 

@@ -1,15 +1,14 @@
-
 import React from 'react';
 import { Bell } from 'lucide-react';
-import { useAppContext } from '../../contexts/AppContext';
+import { useUserAlertStore } from '../../stores/userAlertStore';
 
 interface NotificationBellProps {
   onTogglePanel: () => void;
 }
 
 export const NotificationBell: React.FC<NotificationBellProps> = ({ onTogglePanel }) => {
-  const { appData } = useAppContext();
-  const unreadCount = appData.userAlerts.filter(alert => !alert.isRead).length;
+  const { userAlerts } = useUserAlertStore();
+  const unreadCount = userAlerts.filter(alert => !alert.isRead).length;
 
   return (
     <button

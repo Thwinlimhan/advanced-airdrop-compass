@@ -3,7 +3,7 @@ import { Modal } from '../../design-system/components/Modal';
 import { Input } from '../../design-system/components/Input';
 import { Button } from '../../design-system/components/Button';
 import { MessageSquare, Bot, User, Send, Loader2, AlertTriangle } from 'lucide-react';
-import { GoogleGenAI, GenerateContentResponse, Chat } from "@google/genai";
+import { aiService } from '../../utils/aiService';
 import { useToast } from '../../hooks/useToast';
 import { AlertMessage } from '../ui/AlertMessage'; // Added import
 
@@ -24,58 +24,43 @@ export const AIChatbotModal: React.FC<AIChatbotModalProps> = ({ isOpen, onClose 
   const [userInput, setUserInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [chatInstance, setChatInstance] = useState<Chat | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const { addToast } = useToast();
   const [isApiKeyMissing, setIsApiKeyMissing] = useState(false);
 
   useEffect(() => {
-    if (!process.env.API_KEY) {
+    if (!aiService.isAvailable()) {
       setIsApiKeyMissing(true);
-      setError("API_KEY for AI Chatbot is not configured. This feature is unavailable.");
+      setError(`AI Chatbot is unavailable because ${aiService.getProviderName()} is not configured.`);
       setMessages([{
         id: crypto.randomUUID(),
         sender: 'systemError',
-        text: "AI Chatbot is unavailable because the API_KEY is not configured.",
+        text: `AI Chatbot is unavailable because ${aiService.getProviderName()} is not configured.`,
         timestamp: new Date()
       }]);
     } else {
       setIsApiKeyMissing(false);
       setError(null);
-      // Only reset messages if API key becomes available and was previously missing
-      if (messages.length === 1 && messages[0].sender === 'systemError' && messages[0].text.includes("API_KEY")) {
+      // Only reset messages if AI service becomes available and was previously missing
+      if (messages.length === 1 && messages[0].sender === 'systemError' && messages[0].text.includes("is not configured")) {
         setMessages([]);
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Check API key on mount
+  }, []); // Check AI service on mount
 
   useEffect(() => {
-    if (isOpen && !isApiKeyMissing && (!chatInstance || messages.length === 0 || (messages.length === 1 && messages[0].sender === 'systemError'))) {
-      try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
-        const newChat = ai.chats.create({
-          model: 'gemini-2.5-flash-preview-04-17',
-          config: {
-            systemInstruction: "You are 'Compass Guide', a friendly and helpful AI assistant for the Advanced Crypto Airdrop Compass application. Your primary role is to answer user questions about airdrop farming strategies, Sybil attack prevention, general cryptocurrency concepts, and how to use different features of this application. Be concise and encouraging. If you don't know something, say so. Do not provide financial advice or specific airdrop predictions. You cannot perform actions within the app for the user, but you can explain how they might perform them.",
-          },
-        });
-        setChatInstance(newChat);
-        if (messages.length === 0 || (messages.length === 1 && messages[0].sender === 'systemError' && messages[0].text.includes("API_KEY"))) {
-             setMessages([{
-                id: crypto.randomUUID(),
-                sender: 'ai',
-                text: "Hello! I'm Compass Guide. How can I help you with your airdrop journey today?",
-                timestamp: new Date()
-            }]);
-        }
-      } catch (e) {
-        console.error("Failed to initialize chat:", e);
-        setError("Failed to initialize AI Chat. Please try again later.");
-        addToast("AI Chat initialization failed.", "error");
+    if (isOpen && !isApiKeyMissing && (messages.length === 0 || (messages.length === 1 && messages[0].sender === 'systemError' && messages[0].text.includes("is not configured")))) {
+      if (messages.length === 0 || (messages.length === 1 && messages[0].sender === 'systemError' && messages[0].text.includes("is not configured"))) {
+         setMessages([{
+            id: crypto.randomUUID(),
+            sender: 'ai',
+            text: "Hello! I'm Compass Guide. How can I help you with your airdrop journey today?",
+            timestamp: new Date()
+        }]);
       }
     }
-  }, [isOpen, isApiKeyMissing, chatInstance, addToast, messages]);
+  }, [isOpen, isApiKeyMissing, messages]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -83,7 +68,7 @@ export const AIChatbotModal: React.FC<AIChatbotModalProps> = ({ isOpen, onClose 
 
   const handleSendMessage = async (e: FormEvent) => {
     e.preventDefault();
-    if (!userInput.trim() || isLoading || !chatInstance || isApiKeyMissing) return;
+    if (!userInput.trim() || isLoading || isApiKeyMissing) return;
 
     const userMsg: ChatMessage = {
       id: crypto.randomUUID(),
@@ -97,11 +82,15 @@ export const AIChatbotModal: React.FC<AIChatbotModalProps> = ({ isOpen, onClose 
     setError(null);
 
     try {
-      const response: GenerateContentResponse = await chatInstance.sendMessage({ message: userMsg.text });
+      const systemPrompt = "You are 'Compass Guide', a friendly and helpful AI assistant for the Advanced Crypto Airdrop Compass application. Your primary role is to answer user questions about airdrop farming strategies, Sybil attack prevention, general cryptocurrency concepts, and how to use different features of this application. Be concise and encouraging. If you don't know something, say so. Do not provide financial advice or specific airdrop predictions. You cannot perform actions within the app for the user, but you can explain how they might perform them.";
+      
+      const fullPrompt = `${systemPrompt}\n\nUser: ${userMsg.text}\n\nCompass Guide:`;
+      const response = await aiService.generateContent(fullPrompt);
+      
       const aiMsg: ChatMessage = {
         id: crypto.randomUUID(),
         sender: 'ai',
-        text: response.text.trim(),
+        text: response.trim(),
         timestamp: new Date(),
       };
       setMessages(prev => [...prev, aiMsg]);
@@ -122,12 +111,12 @@ export const AIChatbotModal: React.FC<AIChatbotModalProps> = ({ isOpen, onClose 
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={
-      <div className="flex items-center">
-        <MessageSquare size={20} className="mr-2 text-indigo-500" /> AI Chat Assistant
-      </div>
-    } size="lg">
+    <Modal isOpen={isOpen} onClose={onClose} title="AI Chat Assistant" size="lg">
       <div className="flex flex-col h-[60vh]">
+        <div className="flex items-center mb-3">
+          <MessageSquare size={20} className="mr-2 text-indigo-500" /> 
+          <span className="text-lg font-semibold">Compass Guide</span>
+        </div>
         <div className="flex-grow overflow-y-auto p-3 space-y-3 bg-gray-50 dark:bg-gray-800 rounded-t-md">
           {messages.map(msg => (
             <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>

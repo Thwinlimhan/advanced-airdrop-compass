@@ -1,12 +1,14 @@
-import React, { useState, useEffect } from 'react'; 
+import React, { useState, useEffect } from 'react';
 import { Modal } from '../../design-system/components/Modal';
 import { Button } from '../../design-system/components/Button';
 import { Textarea } from '../../design-system/components/Textarea';
 import { AlertMessage } from '../../components/ui/AlertMessage';
-import { Brain, Loader2, Info, SearchCheck } from 'lucide-react';
-import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 import { useToast } from '../../hooks/useToast';
 import { EligibilityCheckResult } from '../../types';
+import { Card } from '../../design-system/components/Card';
+import { Airdrop } from '../../types';
+import { CheckCircle, Loader2, AlertTriangle, XCircle, SearchCheck, Brain } from 'lucide-react';
+import { aiService } from '../../utils/aiService';
 
 interface EligibilityCheckerProps {
   isOpen: boolean;
@@ -32,9 +34,9 @@ export const EligibilityChecker: React.FC<EligibilityCheckerProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-        if (!process.env.API_KEY) {
+        if (!aiService.isAvailable()) {
             setIsApiKeyMissing(true);
-            setError("API_KEY for AI Pre-Checker is not configured. This feature is unavailable.");
+            setError(`AI Pre-Checker is unavailable because ${aiService.getProviderName()} is not configured.`);
         } else {
             setIsApiKeyMissing(false);
             setError(null); 
@@ -47,7 +49,7 @@ export const EligibilityChecker: React.FC<EligibilityCheckerProps> = ({
 
   const handleCheckEligibility = async () => {
     if (isApiKeyMissing) {
-      setError("API_KEY for AI Pre-Checker is not configured. This feature is unavailable.");
+      setError(`AI Pre-Checker is unavailable because ${aiService.getProviderName()} is not configured.`);
       addToast("AI Pre-Checker disabled: API Key missing.", "warning");
       return;
     }
@@ -67,8 +69,6 @@ export const EligibilityChecker: React.FC<EligibilityCheckerProps> = ({
     }
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
-
       const systemInstruction = `You are an AI assistant that performs conceptual airdrop eligibility pre-checks.
       You will be given:
       1. Airdrop Name
@@ -94,13 +94,10 @@ export const EligibilityChecker: React.FC<EligibilityCheckerProps> = ({
       
       Perform a conceptual pre-check and return a JSON object.`;
 
-      const response: GenerateContentResponse = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-preview-04-17',
-        contents: prompt,
-        config: { systemInstruction, responseMimeType: "application/json" }
-      });
-
-      let jsonStr = response.text.trim();
+      const fullPrompt = `${systemInstruction}\n\n${prompt}`;
+      let jsonStr = await aiService.generateContent(fullPrompt);
+      jsonStr = jsonStr.trim();
+      
       // It's better to rely on the model following the no-markdown instruction.
       // This regex is a fallback.
       const fenceRegex = /^```(\w*)?\s*\n?(.*?)\n?\s*```$/s;
@@ -136,17 +133,20 @@ export const EligibilityChecker: React.FC<EligibilityCheckerProps> = ({
 
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} title={
-        <div className="flex items-center"><SearchCheck size={20} className="mr-2 text-teal-500"/>AI Eligibility Pre-Checker (Conceptual)</div>
-    } size="lg">
+    <Modal isOpen={isOpen} onClose={handleClose} title="AI Eligibility Pre-Checker (Conceptual)" size="lg">
       <div className="space-y-4">
+        <div className="flex items-center mb-3">
+          <SearchCheck size={20} className="mr-2 text-teal-500"/>
+          <span className="text-lg font-semibold">AI Eligibility Pre-Checker</span>
+        </div>
+        
         <AlertMessage 
             type="info" 
             title="Important Disclaimer"
             message="This is an AI-powered conceptual tool. It provides an estimated likelihood based on the information you provide and general patterns. It is NOT a guarantee of airdrop eligibility. Always refer to official project announcements and criteria."
         />
         {isApiKeyMissing && (
-             <AlertMessage type="warning" title="API Key Missing" message="AI Pre-Checker requires an API_KEY to be configured. This feature is currently disabled." />
+             <AlertMessage type="warning" title="AI Service Unavailable" message={`AI Pre-Checker requires ${aiService.getProviderName()} to be configured. This feature is currently disabled.`} />
         )}
         <div>
           <h4 className="font-semibold text-text-light dark:text-text-dark">Airdrop: {airdropName}</h4>

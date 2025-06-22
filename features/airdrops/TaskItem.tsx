@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { AirdropTask, Wallet, Airdrop, AirdropStatus } from '../../types'; 
 import { Button } from '../../design-system/components/Button';
 import { formatRelativeDate, formatMinutesToHoursAndMinutes } from '../../utils/formatting';
-import { CheckSquare, Square, Edit3, Trash2, PlusCircle, ChevronDown, ChevronRight, Link as LinkIcon, Clock, DollarSign, Brain, CheckCheck, Lock } from 'lucide-react'; 
+import { CheckSquare, Square, Edit3, Trash2, PlusCircle, ChevronDown, ChevronRight, Link as LinkIcon, Clock, DollarSign, Brain, CheckCheck, Lock, ExternalLink } from 'lucide-react'; 
 import { useToast } from '../../hooks/useToast';
 import { useTranslation } from '../../hooks/useTranslation';
 
@@ -173,6 +173,13 @@ export const TaskItem: React.FC<TaskItemProps> = ({
           </div>
 
           <div className="flex flex-col sm:flex-row items-end sm:items-center gap-0.5 sm:gap-1 flex-shrink-0">
+            {task.webLink && (
+              <a href={task.webLink} target="_blank" rel="noopener noreferrer">
+                <Button variant="ghost" size="sm" title={`Go to: ${task.webLink}`} className="p-1">
+                  <ExternalLink size={14}/>
+                </Button>
+              </a>
+            )}
             {!isArchived && (
               <>
                 <Button variant="ghost" size="sm" onClick={() => onOpenSuggestionModal(task)} title={t('taskitem_ai_suggestion_aria', { taskName: task.description, defaultValue: `AI: Check completion for ${task.description}`})} aria-label={t('taskitem_ai_suggestion_aria', { taskName: task.description, defaultValue: `AI: Check completion for ${task.description}`})} className="p-1" disabled={isCompletionDisabled}><Brain size={14}/></Button>

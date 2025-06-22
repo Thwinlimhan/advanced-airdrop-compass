@@ -6,7 +6,8 @@ import { Textarea } from '../../design-system/components/Textarea';
 import { Select } from '../../design-system/components/Select';
 import { TagInput } from '../../components/ui/TagInput';
 import { PlusCircle, Trash2, ExternalLink } from 'lucide-react';
-import { useAppContext } from '../../contexts/AppContext';
+import { useAirdropStore } from '../../stores/airdropStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { BLOCKCHAIN_EXPLORERS, DEFAULT_TRANSACTION_CATEGORIES } from '../../constants';
 
 interface TransactionLoggerProps {
@@ -24,8 +25,9 @@ export const TransactionLogger: React.FC<TransactionLoggerProps> = ({
   onDeleteTransaction,
   isArchived,
 }) => {
-  const { appData } = useAppContext();
-  const airdrop = appData.airdrops.find(a => a.id === airdropId);
+  const { airdrops } = useAirdropStore();
+  const { settings } = useSettingsStore();
+  const airdrop = airdrops.find(a => a.id === airdropId);
   
   const [newTxHash, setNewTxHash] = useState('');
   const [newTxDate, setNewTxDate] = useState(new Date().toISOString().split('T')[0]);
@@ -35,8 +37,7 @@ export const TransactionLogger: React.FC<TransactionLoggerProps> = ({
   const [newTxCategory, setNewTxCategory] = useState<string>('');
   const [showAddForm, setShowAddForm] = useState(false);
   
-  const availableCategories = appData.settings.customTransactionCategories || DEFAULT_TRANSACTION_CATEGORIES;
-
+  const availableCategories = settings.customTransactionCategories || DEFAULT_TRANSACTION_CATEGORIES;
 
   const handleAddTransaction = () => {
     if (isArchived) return;

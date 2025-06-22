@@ -1,66 +1,160 @@
 import React from 'react';
-import { Card, CardHeader, CardContent } from '../../design-system/components/Card';
+import { Card } from '../../design-system/components/Card';
 import { Button } from '../../design-system/components/Button';
-import { CheckCircle, Trash2, Bell } from 'lucide-react';
-import { useAppContext } from '../../contexts/AppContext';
+import { AlertTriangle, Info, CheckCircle, XCircle, Bell, X } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { useUserAlertStore } from '../../stores/userAlertStore';
+import { UserAlert, NotificationType } from '../../types';
+import { formatRelativeDate } from '../../utils/formatting';
 
-export const AlertsWidget: React.FC = () => {
-  const { appData, markUserAlertAsRead, deleteUserAlert } = useAppContext();
+interface AlertsWidgetProps {
+  alerts?: UserAlert[];
+}
 
-  const handleAddAlert = async () => {
-    // This would typically open a modal to add a new alert
-    console.log('Add alert functionality would go here');
-  };
+export const AlertsWidget: React.FC<AlertsWidgetProps> = ({ alerts: propAlerts }) => {
+  const { userAlerts, markUserAlertAsRead, deleteUserAlert } = useUserAlertStore();
   
-  const unreadAlerts = appData.userAlerts.filter(alert => !alert.isRead);
-  const readAlerts = appData.userAlerts.filter(alert => alert.isRead);
+  // Use prop alerts if provided, otherwise use store alerts
+  const alerts = propAlerts || userAlerts;
+  const unreadAlerts = alerts.filter(alert => !alert.isRead);
+
+  const getAlertIcon = (type: NotificationType) => {
+    switch (type) {
+      case NotificationType.ERROR:
+        return <XCircle size={16} className="text-red-400" />;
+      case NotificationType.WARNING:
+        return <AlertTriangle size={16} className="text-yellow-400" />;
+      case NotificationType.SUCCESS:
+        return <CheckCircle size={16} className="text-green-400" />;
+      case NotificationType.TASK_DUE:
+        return <Bell size={16} className="text-blue-400" />;
+      case NotificationType.STATUS_CHANGE:
+        return <Info size={16} className="text-purple-400" />;
+      default:
+        return <Info size={16} className="text-gray-400" />;
+    }
+  };
+
+  const getAlertBgColor = (type: NotificationType) => {
+    switch (type) {
+      case NotificationType.ERROR:
+        return 'bg-red-500/10 dark:bg-red-500/20 border-l-red-500';
+      case NotificationType.WARNING:
+        return 'bg-yellow-500/10 dark:bg-yellow-500/20 border-l-yellow-500';
+      case NotificationType.SUCCESS:
+        return 'bg-green-500/10 dark:bg-green-500/20 border-l-green-500';
+      case NotificationType.TASK_DUE:
+        return 'bg-blue-500/10 dark:bg-blue-500/20 border-l-blue-500';
+      case NotificationType.STATUS_CHANGE:
+        return 'bg-purple-500/10 dark:bg-purple-500/20 border-l-purple-500';
+      default:
+        return 'bg-gray-500/10 dark:bg-gray-500/20 border-l-gray-500';
+    }
+  };
+
+  const handleMarkAsRead = async (alertId: string) => {
+    try {
+      await markUserAlertAsRead(alertId);
+    } catch (error) {
+      console.error('Failed to mark alert as read:', error);
+    }
+  };
+
+  const handleDeleteAlert = async (alertId: string) => {
+    try {
+      await deleteUserAlert(alertId);
+    } catch (error) {
+      console.error('Failed to delete alert:', error);
+    }
+  };
+
+  let mainContent;
+  if (alerts.length === 0) {
+    mainContent = (
+      <div className="text-center py-8">
+        <Bell size={32} className="mx-auto text-gray-400 mb-2" />
+        <p className="text-sm text-gray-600 dark:text-gray-400">No alerts to show</p>
+      </div>
+    );
+  } else {
+    mainContent = (
+      <div className="space-y-2 max-h-64 overflow-y-auto">
+        {alerts.slice(0, 5).map((alert) => (
+          <div
+            key={alert.id}
+            className={`p-3 rounded-lg border-l-4 ${getAlertBgColor(alert.type)} ${!alert.isRead ? 'ring-1 ring-blue-500/20' : ''}`}
+          >
+            <div className="flex items-start justify-between">
+              <div className="flex items-start space-x-2 flex-1">
+                {getAlertIcon(alert.type)}
+                <div className="flex-1 min-w-0">
+                  {alert.title && (
+                    <p className={`text-sm font-medium ${!alert.isRead ? 'text-white' : 'text-gray-300'}`}>
+                      {alert.title}
+                    </p>
+                  )}
+                  <p className={`text-xs ${!alert.isRead ? 'text-gray-200' : 'text-gray-400'}`}>
+                    {alert.body}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {formatRelativeDate(alert.date)}
+                  </p>
+                  {alert.relatedAirdropId && (
+                    <Link
+                      to={`/airdrops/${alert.relatedAirdropId}`}
+                      className="text-xs text-blue-400 hover:text-blue-300 mt-1 inline-block"
+                    >
+                      View Airdrop →
+                    </Link>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center space-x-1 ml-2">
+                {!alert.isRead && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleMarkAsRead(alert.id)}
+                    className="p-1 text-blue-400 hover:text-blue-300"
+                    title="Mark as read"
+                  >
+                    <CheckCircle size={12} />
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleDeleteAlert(alert.id)}
+                  className="p-1 text-gray-400 hover:text-red-400"
+                  title="Delete alert"
+                >
+                  <X size={12} />
+                </Button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
 
   return (
-    <Card>
-      <CardHeader 
-        title="Alerts & Notifications" 
-        action={
-          <Button onClick={handleAddAlert} size="sm" variant="ghost" title="Add Alert">
-            <Bell size={16} />
-          </Button>
-        }
-      />
-      <CardContent>
-        {appData.userAlerts.length === 0 ? (
-          <p className="text-muted-dark text-center py-4">No alerts yet. You're all caught up!</p>
-        ) : (
-          <div className="space-y-2.5 max-h-96 overflow-y-auto">
-            {unreadAlerts.length > 0 && unreadAlerts.map((alert) => (
-              <div key={alert.id} className="p-3 rounded-lg bg-yellow-500/10 dark:bg-yellow-500/20 border-l-4 border-yellow-500 flex justify-between items-start">
-                <div>
-                  <p className="text-sm text-white">{alert.body}</p>
-                  <p className="text-xs text-muted-dark">{new Date(alert.date).toLocaleDateString()}</p>
-                </div>
-                <div className="flex space-x-1">
-                  <Button variant="ghost" size="sm" onClick={async () => await markUserAlertAsRead(alert.id)} title="Mark as Read" className="text-green-400 hover:text-green-300">
-                    <CheckCircle size={16} />
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={async () => await deleteUserAlert(alert.id)} className="text-red-400 hover:text-red-300" title="Delete Alert">
-                    <Trash2 size={16} />
-                  </Button>
-                </div>
-              </div>
-            ))}
-            {readAlerts.length > 0 && unreadAlerts.length > 0 && <hr className="my-3 border-gray-700/50"/>}
-            {readAlerts.map((alert) => (
-              <div key={alert.id} className="p-3 rounded-lg bg-card-dark/50 dark:bg-background-dark/50 opacity-70 flex justify-between items-start">
-                 <div>
-                  <p className="text-sm text-muted-dark line-through">{alert.body}</p>
-                  <p className="text-xs text-muted-dark/70">{new Date(alert.date).toLocaleDateString()}</p>
-                </div>
-                 <Button variant="ghost" size="sm" onClick={async () => await deleteUserAlert(alert.id)} className="text-red-400 hover:text-red-300" title="Delete Alert">
-                    <Trash2 size={16} />
-                  </Button>
-              </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
+    <Card title="Alerts & Notifications" className="h-full">
+      {mainContent}
+      {alerts.length > 5 && (
+        <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+          <p className="text-xs text-gray-500 text-center">
+            Showing 5 of {alerts.length} alerts
+          </p>
+        </div>
+      )}
+      {unreadAlerts.length > 0 && (
+        <div className="mt-2">
+          <p className="text-xs text-blue-400 text-center">
+            {unreadAlerts.length} unread alert{unreadAlerts.length !== 1 ? 's' : ''}
+          </p>
+        </div>
+      )}
     </Card>
   );
 };

@@ -1,7 +1,7 @@
 import React from 'react';
 import { PageWrapper } from '../../components/layout/PageWrapper';
 import { Card } from '../../design-system/components/Card';
-import { useAppContext } from '../../contexts/AppContext';
+import { useAuthStore } from '../../stores/authStore';
 import { DEFAULT_USER_BADGES } from '../../constants';
 import { Award, Star, Sparkles, Droplets, ListChecks, WalletCards, NotebookPen, Lock, CalendarCheck, CheckCircle, HelpCircle } from 'lucide-react'; // Added HelpCircle
 import { useTranslation } from '../../hooks/useTranslation';
@@ -21,16 +21,16 @@ const MockStreakBadges: Partial<UserBadge>[] = [ // Using Partial as achievedDat
 
 
 export const AchievementsPage: React.FC = () => {
-  const { appData, checkAndAwardBadges: triggerBadgeCheck } = useAppContext();
+  const { userBadges, checkAndAwardBadges: triggerBadgeCheck } = useAuthStore();
   const { t } = useTranslation();
   const { addToast } = useToast(); // Initialized useToast
 
   const allPossibleBadges = DEFAULT_USER_BADGES;
-  const userBadges = appData.userBadges || [];
+  const userBadgesList = userBadges || [];
 
   // Merge default badges with user's achieved status
   const badgesToDisplay: UserBadge[] = allPossibleBadges.map(defaultBadge => {
-    const userVersion = userBadges.find(ub => ub.id === defaultBadge.id);
+    const userVersion = userBadgesList.find((ub: UserBadge) => ub.id === defaultBadge.id);
     return userVersion || { ...defaultBadge, achieved: false, achievedDate: undefined };
   });
   

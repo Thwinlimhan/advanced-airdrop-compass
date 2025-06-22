@@ -5,9 +5,9 @@ import { Select } from '../../design-system/components/Select';
 import { Input } from '../../design-system/components/Input'; 
 import { AlertMessage } from '../../components/ui/AlertMessage';
 import { Wallet } from '../../types';
-import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
-import { Brain, Loader2, ShieldCheck, UserCircle } from 'lucide-react';
+import { Heart, Loader2, AlertTriangle, CheckCircle, XCircle, Brain, UserCircle } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
+import { aiService } from '../../utils/aiService';
 
 interface WalletHealthCheckModalProps {
   isOpen: boolean;
@@ -34,9 +34,9 @@ export const WalletHealthCheckModal: React.FC<WalletHealthCheckModalProps> = ({ 
     if (isOpen) {
       setIsLoading(false);
       setAnalysisResult(null);
-      if (!process.env.API_KEY) {
+      if (!aiService.isAvailable()) {
         setIsApiKeyMissing(true);
-        setError("API_KEY for AI features is not configured. AI Wallet Health Check is unavailable.");
+        setError(`AI Wallet Health Check is unavailable because ${aiService.getProviderName()} is not configured.`);
       } else {
         setIsApiKeyMissing(false);
         setError(null); 
@@ -51,7 +51,7 @@ export const WalletHealthCheckModal: React.FC<WalletHealthCheckModalProps> = ({ 
 
   const handleAnalyze = async () => {
     if (isApiKeyMissing) {
-      setError("API_KEY for AI features is not configured. AI Wallet Health Check is unavailable.");
+      setError(`AI Wallet Health Check is unavailable because ${aiService.getProviderName()} is not configured.`);
       addToast("AI Health Check disabled: API Key missing.", "warning");
       return;
     }
@@ -60,7 +60,6 @@ export const WalletHealthCheckModal: React.FC<WalletHealthCheckModalProps> = ({ 
     setAnalysisResult(null);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
       const profileDescription = `
         Wallet Name (for context, not for on-chain lookup): ${wallet?.name || 'N/A'}
         Primary Blockchain: ${userWalletContext.primaryBlockchain}
@@ -82,13 +81,10 @@ export const WalletHealthCheckModal: React.FC<WalletHealthCheckModalProps> = ({ 
       Wallet Profile Details:
       ${profileDescription}`;
       
-      const response: GenerateContentResponse = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-preview-04-17',
-        contents: prompt,
-        config: { systemInstruction }
-      });
-
-      let textResponse = response.text.trim();
+      const fullPrompt = `${systemInstruction}\n\n${prompt}`;
+      let textResponse = await aiService.generateContent(fullPrompt);
+      textResponse = textResponse.trim();
+      
       const fenceRegex = /^```(\w*)?\s*\n?(.*?)\n?\s*```$/s;
       const match = textResponse.match(fenceRegex);
       if (match && match[2]) {

@@ -8,7 +8,7 @@ import { Edit3, Trash2, Copy, ExternalLink, Layers, Power, Brain, RefreshCw, Coi
 import { useToast } from '../../hooks/useToast';
 import { BLOCKCHAIN_EXPLORERS } from '../../constants';
 import { WalletHealthCheckModal } from './WalletHealthCheckModal'; 
-import { useAppContext } from '../../contexts/AppContext';
+import { useWalletStore } from '../../stores/walletStore';
 import { formatCurrency } from '../../utils/formatting'; 
 import { useTranslation } from '../../hooks/useTranslation';
 
@@ -53,10 +53,9 @@ const getGroupColor = (groupName: string): string => {
   }
 };
 
-
 export const WalletList: React.FC<WalletListProps> = ({ wallets, onEdit, onDelete, onToggleArchive, selectedWallets, onToggleSelectWallet }) => {
   const { addToast } = useToast();
-  const { fetchWalletBalances } = useAppContext(); 
+  const { fetchWalletBalances } = useWalletStore(); 
   const { t } = useTranslation();
   const [filterGroup, setFilterGroup] = useState(''); 
   const [showArchived, setShowArchived] = useState(false);
@@ -198,36 +197,162 @@ export const WalletList: React.FC<WalletListProps> = ({ wallets, onEdit, onDelet
                             <p className="text-sm text-primary-light dark:text-primary-dark break-all truncate" title={wallet.address}>{wallet.address}</p>
                             <div className="flex flex-wrap items-center gap-2 mt-1.5">
                             <span className="text-xs px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 rounded-full">{wallet.blockchain}</span>
-                            {wallet.group && ( <span className={`text-xs px-2 py-0.5 rounded-full flex items-center font-medium ${groupColorClass}`}> <Layers size={12} className="mr-1" /> {wallet.group} </span> )}
-                            {wallet.autoBalanceFetchEnabled && ( <span className="text-xs px-2 py-0.5 bg-teal-100 dark:bg-teal-700 text-teal-700 dark:text-teal-200 rounded-full flex items-center font-medium" title={t('wallet_autofetch_enabled_title', {defaultValue:"Automated Data Fetching Enabled"})}> <Power size={12} className="mr-1"/> Auto-Fetch </span> )}
-                            </div>
-                             {conceptualTotalValue > 0 && (
-                                <p className="text-xs text-muted-light dark:text-muted-dark mt-1 flex items-center"><DollarSign size={12} className="mr-0.5"/> Est. Native Value: {conceptualTotalValue.toLocaleString(undefined, {maximumFractionDigits:4})} (conceptual)</p>
+                            {wallet.group && (
+                                <span className={`text-xs px-2 py-0.5 rounded-full ${groupColorClass}`}>
+                                    {wallet.group}
+                                </span>
                             )}
+                            {wallet.isArchived && (
+                                <span className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-full">
+                                    Archived
+                                </span>
+                            )}
+                            </div>
                         </div>
                     </div>
-                    {displayBalances.length > 0 && (
-                    <div className="mt-2 text-sm text-text-primary space-y-0.5 max-h-24 overflow-y-auto pr-1 border-t pt-2 dark:border-gray-600">
-                        {displayBalances.map(snap => (
-                            <div key={snap.id} className="flex items-center text-xs">
-                                <Coins size={12} className="mr-1.5 text-yellow-500"/>
-                                <strong>{snap.amount.toLocaleString(undefined, { maximumFractionDigits: 6 })} {snap.tokenSymbol}</strong> 
-                                <span className="text-xs text-muted-light dark:text-muted-dark ml-1.5">({snap.notes ? snap.notes + " " : ""}as of {new Date(snap.date).toLocaleDateString()})</span>
-                            </div>
-                        ))}
-                    </div>
-                    )}
-                    {displayBalances.length === 0 && wallet.autoBalanceFetchEnabled && ( <p className="text-xs text-muted-light dark:text-muted-dark mt-2">{t('wallet_no_snapshots_autofetch', {defaultValue:'No balance snapshots. Try refreshing data.'})}</p> )}
-                    {totalNfts > 0 && ( <div className="mt-1 text-xs text-muted-light dark:text-muted-dark flex items-center"> <ImageIconLucide size={12} className="mr-1 text-purple-500"/> NFTs: {totalNfts} ({nftPortfolioSummary}{totalNfts > 2 ? ', ...' : ''}) </div> )}
 
-                    <div className="flex flex-wrap gap-1 mt-3 pt-2 border-t dark:border-gray-600 justify-end">
-                        <Button variant="ghost" size="sm" onClick={() => handleFetchWalletData(wallet.id)} title={t('wallet_refresh_data_button', {defaultValue:"Refresh Data (Balances & NFTs)"})} disabled={loadingBalanceWalletId === wallet.id || wallet.isArchived} className="p-1.5" aria-label={`Refresh data for wallet ${wallet.name}`}> {loadingBalanceWalletId === wallet.id ? <Loader2 size={14} className="animate-spin"/> : <RefreshCw size={14} />} </Button>
-                        <Button variant="ghost" size="sm" onClick={() => openHealthCheckModal(wallet)} title={t('wallet_ai_health_check_button', {defaultValue:"AI Wallet Health Check"})} className="p-1.5" disabled={wallet.isArchived} aria-label={`AI health check for wallet ${wallet.name}`}> <Brain size={14} /> </Button>
-                        {explorerUrl && ( <a href={explorerUrl} target="_blank" rel="noopener noreferrer" title={`View on ${explorer.name}`} className="p-1.5"> <Button variant="ghost" size="sm" className="p-0" aria-label={`View wallet ${wallet.name} on explorer`}><ExternalLink size={14} /></Button> </a> )}
-                        <Button variant="ghost" size="sm" onClick={() => handleCopyAddress(wallet.address)} title={t('wallet_copy_address_button', {defaultValue:"Copy Address"})} className="p-1.5" aria-label={`Copy address for wallet ${wallet.name}`}><Copy size={14} /></Button>
-                        <Button variant="ghost" size="sm" onClick={() => onToggleArchive(wallet.id, !!wallet.isArchived)} title={wallet.isArchived ? t('wallet_restore_button', {defaultValue:"Restore Wallet"}) : t('wallet_archive_button', {defaultValue:"Archive Wallet"})} className="p-1.5" aria-label={wallet.isArchived ? `Restore wallet ${wallet.name}` : `Archive wallet ${wallet.name}`}> {wallet.isArchived ? <ArchiveRestore size={14}/> : <Archive size={14} />} </Button>
-                        <Button variant="ghost" size="sm" onClick={() => onEdit(wallet)} title={t('wallet_edit_button', {defaultValue:"Edit Wallet"})} className="p-1.5" disabled={wallet.isArchived} aria-label={`Edit wallet ${wallet.name}`}><Edit3 size={14} /></Button>
-                        <Button variant="ghost" size="sm" onClick={() => onDelete(wallet.id)} className="text-red-500 hover:text-red-700 dark:hover:text-red-400 p-1.5" title={t('wallet_delete_button', {defaultValue:"Delete Wallet"})} aria-label={`Delete wallet ${wallet.name}`}><Trash2 size={14} /></Button>
+                    <div className="space-y-3">
+                        {/* Balance Summary */}
+                        <div className="bg-surface-secondary p-3 rounded-lg">
+                            <div className="flex items-center justify-between mb-2">
+                                <h4 className="text-sm font-medium text-text-secondary flex items-center">
+                                    <Coins size={14} className="mr-1.5" />
+                                    Balances
+                                </h4>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleFetchWalletData(wallet.id)}
+                                    disabled={loadingBalanceWalletId === wallet.id}
+                                    className="p-1 h-6 w-6"
+                                >
+                                    {loadingBalanceWalletId === wallet.id ? (
+                                        <Loader2 size={12} className="animate-spin" />
+                                    ) : (
+                                        <RefreshCw size={12} />
+                                    )}
+                                </Button>
+                            </div>
+                            {displayBalances.length > 0 ? (
+                                <div className="space-y-1">
+                                    {displayBalances.slice(0, 3).map((balance) => (
+                                        <div key={balance.id} className="flex justify-between text-xs">
+                                            <span className="text-text-secondary">{balance.tokenSymbol}</span>
+                                            <span className="font-medium">{balance.amount.toFixed(4)}</span>
+                                        </div>
+                                    ))}
+                                    {displayBalances.length > 3 && (
+                                        <div className="text-xs text-text-tertiary text-center pt-1">
+                                            +{displayBalances.length - 3} more
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                <p className="text-xs text-text-tertiary">No balance data</p>
+                            )}
+                        </div>
+
+                        {/* NFT Portfolio */}
+                        {totalNfts > 0 && (
+                            <div className="bg-surface-secondary p-3 rounded-lg">
+                                <div className="flex items-center justify-between mb-2">
+                                    <h4 className="text-sm font-medium text-text-secondary flex items-center">
+                                        <ImageIconLucide size={14} className="mr-1.5" />
+                                        NFTs ({totalNfts})
+                                    </h4>
+                                </div>
+                                <p className="text-xs text-text-secondary truncate" title={nftPortfolioSummary}>
+                                    {nftPortfolioSummary}
+                                </p>
+                            </div>
+                        )}
+
+                        {/* Activity Summary */}
+                        <div className="bg-surface-secondary p-3 rounded-lg">
+                            <div className="flex items-center justify-between mb-2">
+                                <h4 className="text-sm font-medium text-text-secondary flex items-center">
+                                    <Activity size={14} className="mr-1.5" />
+                                    Recent Activity
+                                </h4>
+                            </div>
+                            <div className="space-y-1 text-xs">
+                                <div className="flex justify-between">
+                                    <span className="text-text-secondary">Gas Logs:</span>
+                                    <span className="font-medium">{(wallet.gasLogs || []).length}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-text-secondary">Interactions:</span>
+                                    <span className="font-medium">{(wallet.interactionLogs || []).length}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-text-secondary">Transactions:</span>
+                                    <span className="font-medium">{(wallet.transactionHistory || []).length}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center justify-between mt-4 pt-3 border-t border-border">
+                        <div className="flex items-center space-x-2">
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => onEdit(wallet)}
+                                className="p-1 h-8 w-8"
+                                title="Edit Wallet"
+                            >
+                                <Edit3 size={14} />
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleCopyAddress(wallet.address)}
+                                className="p-1 h-8 w-8"
+                                title="Copy Address"
+                            >
+                                <Copy size={14} />
+                            </Button>
+                            {explorerUrl && (
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => window.open(explorerUrl, '_blank')}
+                                    className="p-1 h-8 w-8"
+                                    title="View on Explorer"
+                                >
+                                    <ExternalLink size={14} />
+                                </Button>
+                            )}
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => openHealthCheckModal(wallet)}
+                                className="p-1 h-8 w-8"
+                                title="Health Check"
+                            >
+                                <Brain size={14} />
+                            </Button>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => onToggleArchive(wallet.id, !wallet.isArchived)}
+                                className={`p-1 h-8 w-8 ${wallet.isArchived ? 'text-green-600' : 'text-gray-600'}`}
+                                title={wallet.isArchived ? "Restore Wallet" : "Archive Wallet"}
+                            >
+                                {wallet.isArchived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => onDelete(wallet.id)}
+                                className="p-1 h-8 w-8 text-red-600 hover:text-red-700"
+                                title="Delete Wallet"
+                            >
+                                <Trash2 size={14} />
+                            </Button>
+                        </div>
                     </div>
                 </Card>
                 );
@@ -235,13 +360,12 @@ export const WalletList: React.FC<WalletListProps> = ({ wallets, onEdit, onDelet
             </div>
         </div>
       ))}
-      {selectedWalletForHealthCheck && (
-        <WalletHealthCheckModal
-            isOpen={isHealthCheckModalOpen}
-            onClose={() => {setIsHealthCheckModalOpen(false); setSelectedWalletForHealthCheck(undefined);}}
-            wallet={selectedWalletForHealthCheck}
-        />
-      )}
+
+      <WalletHealthCheckModal
+        isOpen={isHealthCheckModalOpen}
+        onClose={() => setIsHealthCheckModalOpen(false)}
+        wallet={selectedWalletForHealthCheck}
+      />
     </div>
   );
 };

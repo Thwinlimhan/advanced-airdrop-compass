@@ -12,7 +12,7 @@ import {
   ChartData,
   Plugin
 } from 'chart.js';
-import { useTheme, getThemeColors } from '../../contexts/ThemeContext';
+import { useTheme, getThemeColors, ColorScheme } from '../../contexts/ThemeContext';
 import { BarChart3, TrendingUp, TrendingDown, Award } from 'lucide-react';
 
 ChartJS.register(
@@ -129,7 +129,18 @@ export const EnhancedBarChart: React.FC<EnhancedBarChartProps> = ({
   variant = 'default',
   className = ''
 }) => {
-  const { config, actualTheme } = useTheme();
+  // Use theme context with fallback to prevent errors when used outside ThemeProvider
+  let themeConfig, actualTheme: 'light' | 'dark';
+  try {
+    const theme = useTheme();
+    themeConfig = theme.config;
+    actualTheme = theme.actualTheme;
+  } catch (error) {
+    // Fallback when theme context is not available
+    themeConfig = { colorScheme: ColorScheme.PURPLE, reducedMotion: false };
+    actualTheme = 'light';
+  }
+  
   const chartRef = useRef<ChartJS<'bar'>>(null);
   const [hoveredBar, setHoveredBar] = useState<{ datasetIndex: number; index: number } | null>(null);
   const [chartStats, setChartStats] = useState<{
@@ -139,7 +150,7 @@ export const EnhancedBarChart: React.FC<EnhancedBarChartProps> = ({
     lowest: { label: string; value: number; index: number };
   } | null>(null);
 
-  const colors = getThemeColors(actualTheme, config.colorScheme);
+  const colors = getThemeColors(actualTheme, themeConfig.colorScheme);
 
   // Calculate statistics
   const stats = useMemo(() => {

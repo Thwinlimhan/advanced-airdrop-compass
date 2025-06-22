@@ -5,15 +5,26 @@ import { Modal } from '../../design-system/components/Modal';
 import { TaskForm } from './TaskForm';
 import { TaskList } from './TaskList';
 import { TaskCalendarView } from './TaskCalendarView'; 
-import { useAppContext } from '../../contexts/AppContext';
+import { useRecurringTaskStore } from '../../stores/recurringTaskStore';
+import { useAirdropStore } from '../../stores/airdropStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { RecurringTask } from '../../types';
-import { PlusCircle, Loader2, ListChecks, RefreshCw } from 'lucide-react'; 
+import { PlusCircle, Loader2, ListChecks, RefreshCw, Bell } from 'lucide-react'; 
 import { useToast } from '../../hooks/useToast';
 import { useTranslation } from '../../hooks/useTranslation';
 
-
 export const RecurringTasksPage: React.FC = () => {
-  const { appData, addRecurringTask, updateRecurringTask, deleteRecurringTask, completeRecurringTask, internalFetchRecurringTasksFromApi, isDataLoading } = useAppContext();
+  const { 
+    recurringTasks, 
+    addRecurringTask, 
+    updateRecurringTask, 
+    deleteRecurringTask, 
+    completeRecurringTask, 
+    fetchRecurringTasks,
+    isLoading 
+  } = useRecurringTaskStore();
+  const { airdrops } = useAirdropStore();
+  const { settings } = useSettingsStore();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<RecurringTask | undefined>(undefined);
   const [notificationPermission, setNotificationPermission] = useState(typeof Notification !== 'undefined' ? Notification.permission : 'default');
@@ -29,7 +40,7 @@ export const RecurringTasksPage: React.FC = () => {
   }, []);
 
   const handleRefreshData = async () => {
-    await internalFetchRecurringTasksFromApi(); 
+    await fetchRecurringTasks(); 
   };
 
 
@@ -72,7 +83,7 @@ export const RecurringTasksPage: React.FC = () => {
   };
 
   const handleDeleteTask = async (taskId: string) => {
-    const taskToDelete = appData.recurringTasks.find(t=>t.id === taskId);
+    const taskToDelete = recurringTasks.find(t=>t.id === taskId);
     if (window.confirm(t('task_delete_confirm', {taskName: taskToDelete?.name, defaultValue: `Are you sure you want to delete the task "${taskToDelete?.name}"? This action cannot be undone.`}))) {
         await deleteRecurringTask(taskId);
         addToast(t('task_deleted_toast', {taskName: taskToDelete?.name, defaultValue: `Task "${taskToDelete?.name}" deleted.`}), 'success');
@@ -80,19 +91,19 @@ export const RecurringTasksPage: React.FC = () => {
   };
   
   const handleCompleteTask = async (taskId: string) => {
-    const task = appData.recurringTasks.find(t => t.id === taskId);
+    const task = recurringTasks.find(t => t.id === taskId);
     if (!task) return;
     await completeRecurringTask(taskId); 
-    // Toast is now handled by AppContext after API call returns updatedTask
+    // Toast is now handled by store after API call returns updatedTask
   };
   
   useEffect(() => {
     const checkDueTasks = () => {
-      if (!appData.settings.notificationsEnabled || (typeof Notification !== 'undefined' && Notification.permission !== "granted")) return;
+      if (!settings.notificationsEnabled || (typeof Notification !== 'undefined' && Notification.permission !== "granted")) return;
       const today = new Date();
       today.setHours(0,0,0,0);
 
-      appData.recurringTasks.forEach(task => {
+      recurringTasks.forEach(task => {
         if (task.isActive) {
           const dueDate = new Date(task.nextDueDate);
           dueDate.setHours(0,0,0,0);
@@ -106,7 +117,7 @@ export const RecurringTasksPage: React.FC = () => {
     checkDueTasks(); 
     const intervalId = setInterval(checkDueTasks, 60 * 60 * 1000); 
     return () => clearInterval(intervalId);
-  }, [appData.recurringTasks, appData.settings.notificationsEnabled, notificationPermission]);
+  }, [recurringTasks, settings.notificationsEnabled, notificationPermission]);
 
 
   return (
@@ -117,8 +128,8 @@ export const RecurringTasksPage: React.FC = () => {
             {t('nav_recurring_tasks')}
         </h2>
         <div className="flex gap-2">
-             <Button onClick={handleRefreshData} variant="outline" leftIcon={isDataLoading.recurringTasks ? <Loader2 size={16} className="animate-spin"/> : <RefreshCw size={16}/>} disabled={isDataLoading.recurringTasks}>
-                {isDataLoading.recurringTasks ? t('recurring_tasks_refreshing_button', {defaultValue:"Refreshing..."}) : t('recurring_tasks_refresh_button', {defaultValue:"Refresh Tasks"})}
+             <Button onClick={handleRefreshData} variant="outline" leftIcon={isLoading ? <Loader2 size={16} className="animate-spin"/> : <RefreshCw size={16}/>} disabled={isLoading}>
+                {isLoading ? t('recurring_tasks_refreshing_button', {defaultValue:"Refreshing..."}) : t('recurring_tasks_refresh_button', {defaultValue:"Refresh Tasks"})}
             </Button>
             <Button onClick={openModalForCreate} leftIcon={<PlusCircle size={18}/>}>
             {t('add_new_task_button')}
@@ -126,13 +137,13 @@ export const RecurringTasksPage: React.FC = () => {
         </div>
       </div>
 
-      {notificationPermission === 'denied' && appData.settings.notificationsEnabled && (
+      {notificationPermission === 'denied' && settings.notificationsEnabled && (
         <div className="mb-4 p-3 bg-yellow-100 dark:bg-yellow-800 text-yellow-700 dark:text-yellow-200 rounded-md flex items-center">
             <Bell size={20} className="mr-2"/>
             {t('notifications_denied_message')}
         </div>
       )}
-       {notificationPermission === 'default' && appData.settings.notificationsEnabled && (
+       {notificationPermission === 'default' && settings.notificationsEnabled && (
         <div className="mb-4 p-3 bg-blue-100 dark:bg-blue-800 text-blue-700 dark:text-blue-200 rounded-md flex items-center">
             <Bell size={20} className="mr-2"/>
             {t('notifications_request_permission_message')}
@@ -141,10 +152,10 @@ export const RecurringTasksPage: React.FC = () => {
       )}
       
       <div className="mb-6">
-        <TaskCalendarView tasks={appData.recurringTasks} />
+        <TaskCalendarView tasks={recurringTasks} />
       </div>
 
-      {isDataLoading.recurringTasks && appData.recurringTasks.length === 0 && (
+      {isLoading && recurringTasks.length === 0 && (
            <div className="text-center py-10">
               <Loader2 size={48} className="mx-auto text-primary animate-spin mb-4" />
               <p className="text-xl font-semibold text-text-light dark:text-text-dark">
@@ -154,8 +165,8 @@ export const RecurringTasksPage: React.FC = () => {
       )}
       
       <TaskList
-        tasks={appData.recurringTasks}
-        airdrops={appData.airdrops}
+        tasks={recurringTasks}
+        airdrops={airdrops}
         onEdit={openModalForEdit}
         onDelete={handleDeleteTask}
         onComplete={handleCompleteTask}
@@ -171,7 +182,7 @@ export const RecurringTasksPage: React.FC = () => {
         <TaskForm
           onSubmit={handleFormSubmit}
           initialData={editingTask}
-          airdrops={appData.airdrops}
+          airdrops={airdrops}
           onClose={closeModal}
         />
       </Modal>

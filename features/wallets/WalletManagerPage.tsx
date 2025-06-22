@@ -1,222 +1,352 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PageWrapper } from '../../components/layout/PageWrapper';
+import { Card, CardHeader, CardContent } from '../../design-system/components/Card';
 import { Button } from '../../design-system/components/Button';
 import { Modal } from '../../design-system/components/Modal';
-import { Card } from '../../design-system/components/Card'; 
-import { WalletForm } from './WalletForm';
+import { Input } from '../../design-system/components/Input';
+import { Select } from '../../design-system/components/Select';
+import { useWalletStore } from '../../stores/walletStore';
+import { Wallet, BalanceSnapshot, GasLogEntry, InteractionLogEntry, NftLogEntry, TransactionHistoryEntry } from '../../types';
 import { WalletList } from './WalletList';
-import { useAppContext } from '../../contexts/AppContext';
-import { Wallet, Wallet as WalletType } from '../../types'; 
-import { PlusCircle, PieChart, Archive, ArchiveRestore, Layers, Loader2, RefreshCw, WalletCards as WalletIcon } from 'lucide-react'; // Added RefreshCw and WalletIcon
+import { WalletForm } from './WalletForm';
+import { WalletHealthCheckModal } from './WalletHealthCheckModal';
+import { 
+  Plus, 
+  RefreshCw, 
+  Archive, 
+  ArchiveRestore, 
+  Trash2, 
+  Download, 
+  Upload, 
+  Shield, 
+  Activity,
+  Wallet as WalletIcon,
+  TrendingUp,
+  AlertTriangle,
+  CheckCircle,
+  Clock
+} from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
 import { useTranslation } from '../../hooks/useTranslation';
-
-interface GroupedBalance {
-  [groupName: string]: {
-    [tokenSymbol: string]: number;
-  };
-}
+import { BLOCKCHAIN_OPTIONS } from '../../constants';
 
 export const WalletManagerPage: React.FC = () => {
-  const { appData, addWallet, updateWallet, deleteWallet, batchUpdateWallets, internalFetchWalletsFromApi, isDataLoading } = useAppContext();
+  const { 
+    wallets, 
+    addWallet, 
+    updateWallet, 
+    deleteWallet, 
+    batchUpdateWallets,
+    fetchWallets,
+    isLoading 
+  } = useWalletStore();
+  
   const { addToast } = useToast();
   const { t } = useTranslation();
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingWallet, setEditingWallet] = useState<Wallet | undefined>(undefined);
+
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isHealthCheckModalOpen, setIsHealthCheckModalOpen] = useState(false);
+  const [selectedWalletForHealthCheck, setSelectedWalletForHealthCheck] = useState<Wallet | undefined>(undefined);
+  const [filterBlockchain, setFilterBlockchain] = useState('');
+  const [filterGroup, setFilterGroup] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
   const [selectedWalletIds, setSelectedWalletIds] = useState<string[]>([]);
-  const [isBatchProcessing, setIsBatchProcessing] = useState(false);
-  
 
   useEffect(() => {
-    // Initial data fetch could be handled by AppContext or here for specific page load
-    // If appData.wallets is empty and not loading, fetch them.
-    // if (appData.wallets.length === 0 && !isDataLoading.wallets) {
-    //   internalFetchWalletsFromApi();
-    // }
-  }, []);
+    if (wallets.length === 0 && !isLoading) {
+      fetchWallets();
+    }
+  }, [wallets.length, isLoading, fetchWallets]);
 
   const handleRefreshData = async () => {
-    await internalFetchWalletsFromApi(); 
+    await fetchWallets();
   };
 
-
-  const openModalForCreate = () => {
-    setEditingWallet(undefined);
-    setIsModalOpen(true);
+  const handleAddWallet = async (walletData: Omit<Wallet, 'id' | 'balanceSnapshots' | 'gasLogs' | 'interactionLogs' | 'nftPortfolio' | 'isArchived' | 'transactionHistory'>) => {
+    try {
+      await addWallet(walletData);
+      addToast(`Wallet "${walletData.name}" added successfully.`, 'success');
+      setIsAddModalOpen(false);
+    } catch (error) {
+      addToast('Failed to add wallet.', 'error');
+    }
   };
 
-  const openModalForEdit = (wallet: Wallet) => {
-    setEditingWallet(wallet);
-    setIsModalOpen(true);
-  };
-
-  const closeModal = () => {
-    setIsModalOpen(false);
-    setEditingWallet(undefined);
-  };
-
-  const handleFormSubmit = async (walletData: Omit<Wallet, 'id'> | Wallet) => {
-    if ('id' in walletData) { 
-      await updateWallet(walletData as Wallet);
-      addToast(`Wallet "${walletData.name}" updated.`, 'success');
-    } else { 
-      await addWallet(walletData as Omit<Wallet, 'id'>);
-      addToast(`Wallet "${(walletData as Wallet).name}" added.`, 'success');
+  const handleUpdateWallet = async (wallet: Wallet) => {
+    try {
+      await updateWallet(wallet);
+      addToast(`Wallet "${wallet.name}" updated successfully.`, 'success');
+    } catch (error) {
+      addToast('Failed to update wallet.', 'error');
     }
   };
 
   const handleDeleteWallet = async (walletId: string) => {
-    const walletToDelete = appData.wallets.find(w => w.id === walletId);
-    if (window.confirm(`Are you sure you want to delete wallet "${walletToDelete?.name}"? This action cannot be undone.`)) {
+    const walletToDelete = wallets.find(w => w.id === walletId);
+    if (walletToDelete && window.confirm(`Are you sure you want to delete the wallet "${walletToDelete.name}"? This action cannot be undone.`)) {
+      try {
         await deleteWallet(walletId);
-        addToast(`Wallet "${walletToDelete?.name}" deleted.`, 'success');
+        addToast(`Wallet "${walletToDelete.name}" deleted successfully.`, 'success');
         setSelectedWalletIds(prev => prev.filter(id => id !== walletId));
-    }
-  };
-  
-  const handleToggleArchiveWallet = async (walletId: string, currentIsArchived: boolean) => {
-    const wallet = appData.wallets.find(w => w.id === walletId);
-    if (wallet) {
-        await updateWallet({ ...wallet, isArchived: !currentIsArchived });
-        addToast(`Wallet "${wallet.name}" ${!currentIsArchived ? 'archived' : 'restored'}.`, 'success');
+      } catch (error) {
+        addToast('Failed to delete wallet.', 'error');
+      }
     }
   };
 
-  const handleToggleSelectWallet = (walletId: string) => {
-    setSelectedWalletIds(prev => 
-        prev.includes(walletId) ? prev.filter(id => id !== walletId) : [...prev, walletId]
-    );
-  };
-  
-  const handleBatchArchive = async () => {
-    if (selectedWalletIds.length === 0) return;
-    setIsBatchProcessing(true);
-    await batchUpdateWallets(selectedWalletIds, { isArchived: true });
-    addToast(`${selectedWalletIds.length} wallet(s) archived.`, 'success');
-    setSelectedWalletIds([]);
-    setIsBatchProcessing(false);
-  };
+  const handleBatchArchive = async (archive: boolean) => {
+    if (selectedWalletIds.length === 0) {
+      addToast('No wallets selected.', 'warning');
+      return;
+    }
 
-  const handleBatchUnarchive = async () => {
-     if (selectedWalletIds.length === 0) return;
-    setIsBatchProcessing(true);
-    await batchUpdateWallets(selectedWalletIds, { isArchived: false });
-    addToast(`${selectedWalletIds.length} wallet(s) restored.`, 'success');
-    setSelectedWalletIds([]);
-    setIsBatchProcessing(false);
+    try {
+      await batchUpdateWallets(selectedWalletIds, { isArchived: archive });
+      addToast(`${selectedWalletIds.length} wallet(s) ${archive ? 'archived' : 'restored'} successfully.`, 'success');
+      setSelectedWalletIds([]);
+    } catch (error) {
+      addToast(`Failed to ${archive ? 'archive' : 'restore'} wallets.`, 'error');
+    }
   };
 
+  const handleOpenHealthCheck = (wallet: Wallet) => {
+    setSelectedWalletForHealthCheck(wallet);
+    setIsHealthCheckModalOpen(true);
+  };
 
-  const walletGroupBalances = useMemo((): GroupedBalance => {
-    const balances: GroupedBalance = {};
-    appData.wallets.filter(w => !w.isArchived).forEach(wallet => { 
-        const groupName = wallet.group || 'Ungrouped';
-        if (!balances[groupName]) {
-            balances[groupName] = {};
-        }
-        wallet.balanceSnapshots?.forEach(snapshot => {
-            balances[groupName][snapshot.tokenSymbol.toUpperCase()] = 
-                (balances[groupName][snapshot.tokenSymbol.toUpperCase()] || 0) + snapshot.amount;
-        });
-    });
-    return balances;
-  }, [appData.wallets]);
+  const filteredWallets = wallets.filter(wallet => {
+    const blockchainMatch = filterBlockchain ? wallet.blockchain === filterBlockchain : true;
+    const groupMatch = filterGroup ? wallet.group === filterGroup : true;
+    const archiveMatch = wallet.isArchived === showArchived;
+    return blockchainMatch && groupMatch && archiveMatch;
+  });
+
+  const activeWallets = wallets.filter(w => !w.isArchived);
+  const archivedWallets = wallets.filter(w => w.isArchived);
+  const allGroups = Array.from(new Set(wallets.map(w => w.group).filter(Boolean)));
+
+  const walletStats = {
+    total: wallets.length,
+    active: activeWallets.length,
+    archived: archivedWallets.length,
+    withBalances: wallets.filter(w => w.balanceSnapshots && w.balanceSnapshots.length > 0).length,
+    withTransactions: wallets.filter(w => w.transactionHistory && w.transactionHistory.length > 0).length
+  };
 
   return (
     <PageWrapper>
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-semibold text-text-light flex items-center">
-            <Layers size={26} className="mr-2 text-primary"/>{t('nav_wallet_manager')}
-        </h2>
-        <div className="flex gap-2">
-            <Button onClick={handleRefreshData} variant="outline" leftIcon={isDataLoading.wallets ? <Loader2 size={16} className="animate-spin"/> : <RefreshCw size={16}/>} disabled={isDataLoading.wallets}>
-                {isDataLoading.wallets ? t('wallet_manager_refreshing_button', {defaultValue:"Refreshing..."}) : t('wallet_manager_refresh_button', {defaultValue:"Refresh Wallets"})}
-            </Button>
-            <Button onClick={openModalForCreate} leftIcon={<PlusCircle size={18}/>}>
-            {t('add_new_wallet_button')}
-            </Button>
-        </div>
-      </div>
-      
-      <p className="text-sm text-muted-light mb-6">
-        {t('wallet_manager_intro_text', {defaultValue: "Manage your public wallet addresses here. IMPORTANT: This application will NEVER ask for, handle, or store your private keys or seed phrases."})}
-      </p>
+      <div className="p-6 space-y-6">
+        {/* Header */}
+        <Card variant="elevated" padding="lg">
+          <CardHeader>
+            <h3 className="text-lg font-semibold flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <WalletIcon size={24} className="text-accent" />
+                Wallet Management
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRefreshData}
+                  leftIcon={<RefreshCw size={16} />}
+                  disabled={isLoading}
+                >
+                  {isLoading ? 'Loading...' : 'Refresh'}
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => setIsAddModalOpen(true)}
+                  leftIcon={<Plus size={16} />}
+                >
+                  Add Wallet
+                </Button>
+              </div>
+            </h3>
+          </CardHeader>
+          <CardContent>
+            <p className="text-secondary">
+              Manage your crypto wallets, track balances, and monitor transactions across different blockchains.
+            </p>
+          </CardContent>
+        </Card>
 
-      {selectedWalletIds.length > 0 && (
-        <Card className="mb-4 p-3">
-            <div className="flex flex-wrap gap-2 items-center">
-                <span className="text-sm font-medium">{t('wallet_manager_selected_count_text', {count: selectedWalletIds.length, defaultValue: `Selected: ${selectedWalletIds.length} wallet(s)`})}</span>
-                <Button size="sm" variant="outline" onClick={handleBatchArchive} leftIcon={isBatchProcessing ? <Loader2 size={14} className="animate-spin"/> : <Archive size={14}/>} disabled={isBatchProcessing}>{t('wallet_manager_batch_archive_button')}</Button>
-                <Button size="sm" variant="outline" onClick={handleBatchUnarchive} leftIcon={isBatchProcessing ? <Loader2 size={14} className="animate-spin"/> : <ArchiveRestore size={14}/>} disabled={isBatchProcessing}>{t('wallet_manager_batch_restore_button')}</Button>
-                <Button size="sm" variant="ghost" onClick={() => setSelectedWalletIds([])} disabled={isBatchProcessing}>{t('wallet_manager_clear_selection_button')}</Button>
+        {/* Stats Overview */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          <Card variant="default" padding="md">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Total Wallets</p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{walletStats.total}</p>
+              </div>
+              <WalletIcon size={24} className="text-blue-500" />
             </div>
-        </Card>
-      )}
+          </Card>
 
-      {Object.keys(walletGroupBalances).length > 0 && (
-        <Card title={t('wallet_manager_group_balance_title', {defaultValue:"Active Wallet Group Balance Summary (Manual Snapshots)"})} className="mb-6">
-          <div className="space-y-4">
-            {Object.entries(walletGroupBalances).map(([group, tokens]) => (
-              Object.keys(tokens).length > 0 && (
-                <div key={group} className="p-3 bg-gray-50 rounded-md">
-                  <h4 className="text-md font-semibold text-indigo-600 mb-1.5">{group}</h4>
-                  <ul className="list-disc list-inside text-sm space-y-0.5">
-                    {Object.entries(tokens).map(([symbol, amount]) => (
-                      <li key={symbol} className="text-text-light">
-                        {symbol}: <span className="font-medium">{amount.toLocaleString(undefined, {maximumFractionDigits: 8})}</span>
-                      </li>
-                    ))}
-                  </ul>
+          <Card variant="default" padding="md">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Active</p>
+                <p className="text-2xl font-bold text-green-600 dark:text-green-400">{walletStats.active}</p>
+              </div>
+              <CheckCircle size={24} className="text-green-500" />
+            </div>
+          </Card>
+
+          <Card variant="default" padding="md">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Archived</p>
+                <p className="text-2xl font-bold text-gray-600 dark:text-gray-400">{walletStats.archived}</p>
+              </div>
+              <Archive size={24} className="text-gray-500" />
+            </div>
+          </Card>
+
+          <Card variant="default" padding="md">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600 dark:text-gray-400">With Balances</p>
+                <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">{walletStats.withBalances}</p>
+              </div>
+              <TrendingUp size={24} className="text-purple-500" />
+            </div>
+          </Card>
+
+          <Card variant="default" padding="md">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600 dark:text-gray-400">With Transactions</p>
+                <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">{walletStats.withTransactions}</p>
+              </div>
+              <Activity size={24} className="text-orange-500" />
+            </div>
+          </Card>
+        </div>
+
+        {/* Filters */}
+        <Card variant="default" padding="md">
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Select
+                value={filterBlockchain}
+                onChange={(e) => setFilterBlockchain(e.target.value)}
+                options={[
+                  { value: '', label: 'All Blockchains' },
+                  ...BLOCKCHAIN_OPTIONS.map(blockchain => ({ value: blockchain, label: blockchain }))
+                ]}
+              />
+              <Select
+                value={filterGroup}
+                onChange={(e) => setFilterGroup(e.target.value)}
+                options={[
+                  { value: '', label: 'All Groups' },
+                  ...allGroups.filter(group => group !== undefined).map(group => ({ value: group, label: group }))
+                ]}
+              />
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowArchived(!showArchived)}
+                  leftIcon={showArchived ? <ArchiveRestore size={16} /> : <Archive size={16} />}
+                >
+                  {showArchived ? 'Show Active' : 'Show Archived'}
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Batch Actions */}
+        {selectedWalletIds.length > 0 && (
+          <Card variant="default" padding="md">
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">
+                  {selectedWalletIds.length} wallet(s) selected
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleBatchArchive(true)}
+                    leftIcon={<Archive size={16} />}
+                  >
+                    Archive Selected
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleBatchArchive(false)}
+                    leftIcon={<ArchiveRestore size={16} />}
+                  >
+                    Restore Selected
+                  </Button>
                 </div>
-              )
-            ))}
-          </div>
-           <p className="text-xs text-muted-light mt-3">{t('wallet_manager_group_balance_note')}</p>
-        </Card>
-      )}
-      
-      {isDataLoading.wallets && appData.wallets.length === 0 && (
-        <div className="text-center py-10">
-            <Loader2 size={48} className="mx-auto text-primary animate-spin mb-4" />
-            <p className="text-xl font-semibold text-text-light">
-                {t('wallet_manager_loading_wallets', {defaultValue: 'Loading Wallets...'})}
-            </p>
-        </div>
-      )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
-      {!isDataLoading.wallets && appData.wallets.length === 0 && (
-         <div className="text-center py-10">
-            <WalletIcon size={48} className="mx-auto text-gray-400 mb-4" />
-            <p className="text-xl font-semibold text-text-light mb-2">
-                {t('wallet_list_empty_title', {defaultValue: 'No Wallets Yet'})}
-            </p>
-            <p className="text-muted-light">
-                {t('wallet_list_empty_message', {defaultValue: 'Add your first wallet to start tracking balances and interactions.'})}
-            </p>
-        </div>
-      )}
-
-
-      <WalletList
-        wallets={appData.wallets}
-        onEdit={openModalForEdit}
-        onDelete={handleDeleteWallet}
-        onToggleArchive={handleToggleArchiveWallet}
-        selectedWallets={selectedWalletIds}
-        onToggleSelectWallet={handleToggleSelectWallet}
-      />
-
-      <Modal
-        isOpen={isModalOpen}
-        onClose={closeModal}
-        title={editingWallet ? t('wallet_form_edit_title', {defaultValue: 'Edit Wallet'}) : t('wallet_form_add_title', {defaultValue: 'Add New Wallet'})}
-      >
-        <WalletForm
-          onSubmit={handleFormSubmit}
-          initialData={editingWallet}
-          onClose={closeModal}
+        {/* Wallet List */}
+        <WalletList
+          wallets={filteredWallets}
+          onEdit={handleUpdateWallet}
+          onDelete={handleDeleteWallet}
+          onToggleArchive={(walletId: string, isArchived: boolean) => {
+            const wallet = wallets.find(w => w.id === walletId);
+            if (wallet) {
+              handleUpdateWallet({ ...wallet, isArchived });
+            }
+          }}
+          selectedWallets={selectedWalletIds}
+          onToggleSelectWallet={(walletId: string) => {
+            setSelectedWalletIds(prev =>
+              prev.includes(walletId) ? prev.filter(id => id !== walletId) : [...prev, walletId]
+            );
+          }}
         />
-      </Modal>
+
+        {/* Empty State */}
+        {filteredWallets.length === 0 && (
+          <Card variant="default" padding="xl">
+            <CardContent className="text-center py-12">
+              <WalletIcon size={48} className="mx-auto text-muted mb-4" />
+              <h3 className="text-lg font-semibold mb-2">No wallets found</h3>
+              <p className="text-secondary mb-4">
+                {filterBlockchain || filterGroup || showArchived
+                  ? 'Try adjusting your filters.'
+                  : 'Get started by adding your first wallet.'}
+              </p>
+              {!filterBlockchain && !filterGroup && !showArchived && (
+                <Button
+                  variant="primary"
+                  onClick={() => setIsAddModalOpen(true)}
+                  leftIcon={<Plus size={16} />}
+                >
+                  Add Your First Wallet
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Modals */}
+        <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} title="Add New Wallet">
+          <WalletForm
+            onSubmit={handleAddWallet}
+            onClose={() => setIsAddModalOpen(false)}
+          />
+        </Modal>
+
+        <WalletHealthCheckModal
+          isOpen={isHealthCheckModalOpen}
+          onClose={() => setIsHealthCheckModalOpen(false)}
+          wallet={selectedWalletForHealthCheck}
+        />
+      </div>
     </PageWrapper>
   );
 };

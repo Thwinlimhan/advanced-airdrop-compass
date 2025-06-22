@@ -2,32 +2,49 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { PageWrapper } from '../../components/layout/PageWrapper';
 import { Button } from '../../design-system/components/Button';
 import { Modal } from '../../design-system/components/Modal';
+import { DraggableModal } from '../../design-system/components/DraggableModal';
 import { Input } from '../../design-system/components/Input';
 import { Select } from '../../design-system/components/Select';
 import { Textarea } from '../../design-system/components/Textarea';
-import { AirdropForm } from './AirdropForm';
+import { AirdropFormModal } from './AirdropForm';
 import { AirdropCard } from './AirdropCard';
-import { useAppContext } from '../../contexts/AppContext';
+import { useAirdropStore } from '../../stores/airdropStore';
 import { Airdrop, AirdropStatus, AirdropPriority, AirdropTask, AirdropTaskFilterPreset } from '../../types';
-import { PlusCircle, Search, Filter, Archive, ArchiveRestore, Edit, Info, Layers, Droplets, Trash2 as ClearIcon, StickyNote, Loader2, RefreshCw, Plus, Eye, EyeOff } from 'lucide-react';
+import { PlusCircle, Search, Filter, Archive, ArchiveRestore, Edit, Info, Layers, Droplets, Trash2 as ClearIcon, StickyNote, Loader2, RefreshCw, Plus, Eye, EyeOff, LayoutGrid, List, DownloadCloud } from 'lucide-react';
 import { BLOCKCHAIN_OPTIONS, AIRDROP_STATUS_OPTIONS, MY_AIRDROP_STATUS_OPTIONS, AIRDROP_PRIORITY_OPTIONS } from '../../constants';
 import { TagInput } from '../../components/ui/TagInput';
 import { BatchEditAirdropsModal } from './BatchEditAirdropsModal';
 import { AddAirdropTutorial } from '../tutorials/AddAirdropTutorial';
 import { useToast } from '../../hooks/useToast';
 import { useTranslation } from '../../hooks/useTranslation';
-import { FixedSizeList as List } from 'react-window';
+import { FixedSizeList as VirtualList } from 'react-window';
 import { Card, CardHeader, CardContent } from '../../design-system/components/Card';
 import { Gift } from 'lucide-react';
+import { AirdropListItem } from './AirdropListItem';
+import { AirdropScraperModal } from './AirdropScraperModal';
 
 export const AirdropListPage: React.FC = () => {
-  const { appData, addAirdrop, updateAirdrop, deleteAirdrop, batchUpdateAirdrops, batchAddNotesToAirdrops, clearArchivedAirdrops, internalFetchAirdropsFromApi, isDataLoading } = useAppContext();
+  const { 
+    airdrops, 
+    addAirdrop, 
+    updateAirdrop, 
+    deleteAirdrop, 
+    batchUpdateAirdrops, 
+    batchAddNotesToAirdrops, 
+    clearArchivedAirdrops,
+    fetchAirdrops,
+    isLoading,
+    scrapeAirdropDataFromURL
+  } = useAirdropStore();
+  
   const { addToast } = useToast();
   const { t } = useTranslation();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isScraperModalOpen, setIsScraperModalOpen] = useState(false);
   const [editingAirdrop, setEditingAirdrop] = useState<Airdrop | undefined>(undefined);
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [filterBlockchain, setFilterBlockchain] = useState('');
   const [filterInteractionType, setFilterInteractionType] = useState('');
   const [filterDateAddedStart, setFilterDateAddedStart] = useState('');
@@ -48,20 +65,49 @@ export const AirdropListPage: React.FC = () => {
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
 
   useEffect(() => {
-    // Initial data fetch could be handled by AppContext or here for specific page load.
-    // If appData.airdrops is empty and not loading, fetch them.
-    // if (appData.airdrops.length === 0 && !isDataLoading.airdrops) {
-    //   internalFetchAirdropsFromApi();
-    // }
-  }, []);
+    // Initial data fetch
+    if (airdrops.length === 0 && !isLoading) {
+      fetchAirdrops();
+    }
+  }, [airdrops.length, isLoading, fetchAirdrops]);
 
   const handleRefreshData = async () => {
-    await internalFetchAirdropsFromApi();
+    await fetchAirdrops();
   };
 
-  const openModalForCreate = () => {
-    setEditingAirdrop(undefined);
+  const openModalForCreate = (prefillData?: Partial<Airdrop>) => {
+    // Modified to accept prefill data
+    const newAirdropTemplate: Partial<Airdrop> = {
+        projectName: prefillData?.projectName || '',
+        blockchain: prefillData?.blockchain || BLOCKCHAIN_OPTIONS[0],
+        status: prefillData?.status || AirdropStatus.RUMORED,
+        potential: prefillData?.potential || 'Unknown',
+        myStatus: AirdropStatus.NOT_STARTED,
+        priority: prefillData?.priority || AirdropPriority.MEDIUM,
+        description: prefillData?.description || '',
+        officialLinks: prefillData?.officialLinks || { website: '', twitter: '', discord: '' },
+        notes: prefillData?.notes || '',
+        tags: prefillData?.tags || [],
+        isArchived: false,
+        timeSpentHours: 0,
+        dependentOnAirdropIds: [],
+        leadsToAirdropIds: [],
+        dateAdded: new Date().toISOString(),
+    };
+    setEditingAirdrop(newAirdropTemplate as Airdrop);
     setIsModalOpen(true);
+  };
+  
+  // New handler for the scraper flow
+  const handleScrapeAndPrefill = async (url: string) => {
+    try {
+      const prefillData = await scrapeAirdropDataFromURL(url);
+      if (prefillData) {
+        openModalForCreate(prefillData);
+      }
+    } catch (error) {
+      addToast('Failed to scrape data from URL.', 'error');
+    }
   };
 
   const openModalForEdit = (airdrop: Airdrop) => {
@@ -74,38 +120,75 @@ export const AirdropListPage: React.FC = () => {
     setEditingAirdrop(undefined);
   };
 
-  const handleFormSubmit = async (airdropData: Omit<Airdrop, 'id' | 'tasks' | 'transactions' | 'claimedTokens' | 'sybilChecklist' | 'roadmapEvents' | 'dependentOnAirdropIds' | 'leadsToAirdropIds' | 'customFields'| 'dateAdded' | 'notificationOverrides'> | Airdrop): Promise<void | Airdrop | null> => {
-    if ('id' in airdropData && airdropData.id) {
-      await updateAirdrop(airdropData as Airdrop);
-      addToast(`Airdrop "${airdropData.projectName}" updated.`, 'success');
-      return Promise.resolve();
-    } else {
-      const { id, tasks, transactions, claimedTokens, sybilChecklist, roadmapEvents, dateAdded, customFields, notificationOverrides, ...creationDataInput } = airdropData as Partial<Airdrop>;
-
-      const submissionObject = {
-        ...creationDataInput,
-        priority: (airdropData as Airdrop).priority || AirdropPriority.MEDIUM,
-        dependentOnAirdropIds: (airdropData as Airdrop).dependentOnAirdropIds || [],
-        leadsToAirdropIds: (airdropData as Airdrop).leadsToAirdropIds || [],
+  const handleFormSubmit = async (airdropData: any): Promise<void | Airdrop | null> => {
+    try {
+      // Convert AirdropFormData to Airdrop format
+      const convertedData = {
+        ...airdropData,
+        id: editingAirdrop?.id || undefined,
+        status: editingAirdrop?.status || AirdropStatus.RUMORED,
+        priority: editingAirdrop?.priority || AirdropPriority.MEDIUM,
+        tasks: editingAirdrop?.tasks || [],
+        transactions: editingAirdrop?.transactions || [],
+        claimedTokens: editingAirdrop?.claimedTokens || [],
+        sybilChecklist: editingAirdrop?.sybilChecklist || [],
+        roadmapEvents: editingAirdrop?.roadmapEvents || [],
+        dependentOnAirdropIds: editingAirdrop?.dependentOnAirdropIds || [],
+        leadsToAirdropIds: editingAirdrop?.leadsToAirdropIds || [],
+        customFields: editingAirdrop?.customFields || [],
+        dateAdded: editingAirdrop?.dateAdded || new Date().toISOString(),
+        notificationOverrides: editingAirdrop?.notificationOverrides || {},
+        isArchived: editingAirdrop?.isArchived || false,
+        timeSpentHours: editingAirdrop?.timeSpentHours || 0,
+        logoBase64: editingAirdrop?.logoBase64 || undefined,
+        projectCategory: editingAirdrop?.projectCategory || undefined,
+        eligibilityCriteria: airdropData.eligibility || '',
+        officialLinks: {
+          website: airdropData.website || '',
+          twitter: airdropData.twitter || '',
+          discord: airdropData.discord || ''
+        }
       };
 
-      const newAirdrop = await addAirdrop(submissionObject as Omit<Airdrop, 'id' | 'tasks' | 'transactions' | 'claimedTokens' | 'sybilChecklist' | 'tags' | 'isArchived' | 'timeSpentHours' | 'roadmapEvents' | 'dependentOnAirdropIds' | 'leadsToAirdropIds' | 'logoBase64' | 'customFields' | 'dateAdded' | 'notificationOverrides'>);
-      addToast(`Airdrop "${(airdropData as Airdrop).projectName}" added.`, 'success');
-      return newAirdrop;
+      if ('id' in convertedData && convertedData.id) {
+        await updateAirdrop(convertedData as Airdrop);
+        addToast(`Airdrop "${convertedData.projectName}" updated.`, 'success');
+        return Promise.resolve();
+      } else {
+        const { id, tasks, transactions, claimedTokens, sybilChecklist, roadmapEvents, dateAdded, customFields, notificationOverrides, ...creationDataInput } = convertedData as Partial<Airdrop>;
+
+        const submissionObject = {
+          ...creationDataInput,
+          priority: (convertedData as Airdrop).priority || AirdropPriority.MEDIUM,
+          dependentOnAirdropIds: (convertedData as Airdrop).dependentOnAirdropIds || [],
+          leadsToAirdropIds: (convertedData as Airdrop).leadsToAirdropIds || [],
+        };
+
+        const newAirdrop = await addAirdrop(submissionObject as Omit<Airdrop, 'id' | 'tasks' | 'transactions' | 'claimedTokens' | 'sybilChecklist' | 'tags' | 'isArchived' | 'timeSpentHours' | 'roadmapEvents' | 'dependentOnAirdropIds' | 'leadsToAirdropIds' | 'logoBase64' | 'customFields' | 'dateAdded' | 'notificationOverrides'>);
+        addToast(`Airdrop "${(convertedData as Airdrop).projectName}" added.`, 'success');
+        return newAirdrop;
+      }
+    } catch (error) {
+      addToast(`Failed to ${editingAirdrop ? 'update' : 'add'} airdrop.`, 'error');
+      throw error;
     }
   };
 
   const handleDeleteAirdrop = async (airdropId: string) => {
-    const airdropToDelete = appData.airdrops.find(a => a.id === airdropId);
+    const airdropToDelete = airdrops.find(a => a.id === airdropId);
     if (window.confirm(`Are you sure you want to delete the airdrop "${airdropToDelete?.projectName}" and all its associated tasks and transactions? This action cannot be undone.`)) {
-        await deleteAirdrop(airdropId);
-        addToast(`Airdrop "${airdropToDelete?.projectName}" deleted.`, 'success');
-        setSelectedAirdropIds(prev => prev.filter(id => id !== airdropId));
+        try {
+          await deleteAirdrop(airdropId);
+          addToast(`Airdrop "${airdropToDelete?.projectName}" deleted.`, 'success');
+          setSelectedAirdropIds(prev => prev.filter(id => id !== airdropId));
+        } catch (error) {
+          addToast('Failed to delete airdrop.', 'error');
+        }
     }
   };
 
   const filteredAndSortedAirdrops = useMemo(() => {
-    let filtered = appData.airdrops.filter(airdrop => {
+    let filtered = airdrops.filter(airdrop => {
       const searchTermLower = searchTerm.toLowerCase();
       const nameMatch = airdrop.projectName.toLowerCase().includes(searchTermLower);
       const blockchainMatch = filterBlockchain ? airdrop.blockchain === filterBlockchain : true;
@@ -166,13 +249,13 @@ export const AirdropListPage: React.FC = () => {
         case 'dateAdded_desc': filtered.sort((a,b) => new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime()); break;
     }
     return filtered;
-  }, [appData.airdrops, searchTerm, filterBlockchain, filterStatus, filterMyStatus, filterPriority, filterTags, showArchived, sortBy, filterInteractionType, filterDateAddedStart, filterDateAddedEnd, filterTaskDueDate]);
+  }, [airdrops, searchTerm, filterBlockchain, filterStatus, filterMyStatus, filterPriority, filterTags, showArchived, sortBy, filterInteractionType, filterDateAddedStart, filterDateAddedEnd, filterTaskDueDate]);
 
   const allTags = useMemo(() => {
     const tagsSet = new Set<string>();
-    appData.airdrops.forEach(airdrop => airdrop.tags?.forEach(tag => tagsSet.add(tag)));
+    airdrops.forEach(airdrop => airdrop.tags?.forEach(tag => tagsSet.add(tag)));
     return Array.from(tagsSet).sort();
-  }, [appData.airdrops]);
+  }, [airdrops]);
 
   const handleToggleSelectAirdrop = (airdropId: string) => {
     const airdrop = filteredAndSortedAirdrops.find(a => a.id === airdropId);
@@ -200,13 +283,17 @@ export const AirdropListPage: React.FC = () => {
   const handleBatchEdit = async (updates: Partial<Pick<Airdrop, 'status' | 'myStatus' | 'priority' | 'blockchain' | 'isArchived'>>) => {
     setIsBatchProcessing(true);
     const idsToUpdate = selectedAirdropIds.filter(id => {
-        const ad = appData.airdrops.find(a => a.id === id);
+        const ad = airdrops.find(a => a.id === id);
         return ad && ad.isArchived === showArchived;
     });
 
     if (idsToUpdate.length > 0) {
-        await batchUpdateAirdrops(idsToUpdate, updates);
-        addToast(`${idsToUpdate.length} airdrop(s) updated.`, 'success');
+        try {
+          await batchUpdateAirdrops(idsToUpdate, updates);
+          addToast(`${idsToUpdate.length} airdrop(s) updated.`, 'success');
+        } catch (error) {
+          addToast('Failed to update airdrops.', 'error');
+        }
     }
     setIsBatchEditModalOpen(false);
     setSelectedAirdropIds([]);
@@ -216,12 +303,16 @@ export const AirdropListPage: React.FC = () => {
   const handleBatchArchiveOrRestore = async (archive: boolean) => {
     setIsBatchProcessing(true);
     const idsToUpdate = selectedAirdropIds.filter(id => {
-        const ad = appData.airdrops.find(a=>a.id===id);
+        const ad = airdrops.find(a=>a.id===id);
         return ad && ad.isArchived !== archive;
     });
     if (idsToUpdate.length > 0) {
-        await batchUpdateAirdrops(idsToUpdate, { isArchived: archive });
-        addToast(`${idsToUpdate.length} airdrop(s) ${archive ? 'archived' : 'restored'}.`, 'success');
+        try {
+          await batchUpdateAirdrops(idsToUpdate, { isArchived: archive });
+          addToast(`${idsToUpdate.length} airdrop(s) ${archive ? 'archived' : 'restored'}.`, 'success');
+        } catch (error) {
+          addToast(`Failed to ${archive ? 'archive' : 'restore'} airdrops.`, 'error');
+        }
     } else {
         addToast(`No airdrops needed to be ${archive ? 'archived' : 'restored'}.`, 'info');
     }
@@ -231,14 +322,19 @@ export const AirdropListPage: React.FC = () => {
 
   const handleClearArchived = async () => {
     setIsBatchProcessing(true);
-    const archivedCount = appData.airdrops.filter(a => a.isArchived).length;
+    const archivedCount = airdrops.filter(a => a.isArchived).length;
     if(archivedCount === 0) {
         addToast("No archived airdrops to clear.", "info");
         setIsBatchProcessing(false);
         return;
     }
     if (window.confirm(`Are you sure you want to permanently delete ALL ${archivedCount} archived airdrops? This action cannot be undone.`)) {
-        await clearArchivedAirdrops();
+        try {
+          await clearArchivedAirdrops();
+          addToast(`${archivedCount} archived airdrops cleared.`, 'success');
+        } catch (error) {
+          addToast('Failed to clear archived airdrops.', 'error');
+        }
     }
     setIsBatchProcessing(false);
   };
@@ -249,8 +345,12 @@ export const AirdropListPage: React.FC = () => {
         return;
     }
     setIsBatchProcessing(true);
-    await batchAddNotesToAirdrops(selectedAirdropIds, bulkNotes);
-    addToast(`Notes appended to ${selectedAirdropIds.length} airdrop(s).`, 'success');
+    try {
+      await batchAddNotesToAirdrops(selectedAirdropIds, bulkNotes);
+      addToast(`Notes appended to ${selectedAirdropIds.length} airdrop(s).`, 'success');
+    } catch (error) {
+      addToast('Failed to add notes to airdrops.', 'error');
+    }
     setBulkNotes('');
     setIsBatchNotesModalOpen(false);
     setSelectedAirdropIds([]);
@@ -264,8 +364,8 @@ export const AirdropListPage: React.FC = () => {
     { value: 'dueNext30Days', label: t('airdrop_list_task_due_filter_dueNext30Days', {defaultValue:'Tasks Due Next 30 Days'}) },
   ];
 
-  const activeAirdropsForCount = appData.airdrops.filter(a => !a.isArchived).length;
-  const archivedAirdropsForCount = appData.airdrops.filter(a => a.isArchived).length;
+  const activeAirdropsForCount = airdrops.filter(a => !a.isArchived).length;
+  const archivedAirdropsForCount = airdrops.filter(a => a.isArchived).length;
 
   const VirtualizedAirdropList: React.FC<{ airdrops: Airdrop[] }> = ({ airdrops }) => {
     const renderAirdropCard = ({ index, style }: { index: number; style: React.CSSProperties }) => {
@@ -282,14 +382,14 @@ export const AirdropListPage: React.FC = () => {
     };
 
     return (
-      <List
+      <VirtualList
         height={600}
         width="100%"
         itemCount={airdrops.length}
         itemSize={200}
       >
         {renderAirdropCard}
-      </List>
+      </VirtualList>
     );
   };
 
@@ -310,13 +410,22 @@ export const AirdropListPage: React.FC = () => {
                   size="sm"
                   onClick={handleRefreshData}
                   leftIcon={<RefreshCw size={16} />}
+                  disabled={isLoading}
                 >
-                  Refresh
+                  {isLoading ? 'Loading...' : 'Refresh'}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsScraperModalOpen(true)}
+                  leftIcon={<DownloadCloud size={16} />}
+                >
+                  Import from URL (AI)
                 </Button>
                 <Button
                   variant="primary"
                   size="sm"
-                  onClick={openModalForCreate}
+                  onClick={() => openModalForCreate()}
                   leftIcon={<Plus size={16} />}
                 >
                   Add Airdrop
@@ -375,59 +484,62 @@ export const AirdropListPage: React.FC = () => {
           </CardContent>
         </Card>
 
-        {/* Batch Actions */}
-        {selectedAirdropIds.length > 0 && (
-          <Card variant="default" padding="md">
-            <CardContent>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">
-                  {selectedAirdropIds.length} airdrop(s) selected
-                </span>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setIsBatchEditModalOpen(true)}
-                    leftIcon={<Edit size={16} />}
-                  >
-                    Batch Edit
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleBatchArchiveOrRestore(true)}
-                    leftIcon={<Archive size={16} />}
-                  >
-                    Archive Selected
-                  </Button>
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    onClick={() => handleBatchArchiveOrRestore(false)}
-                    leftIcon={<ClearIcon size={16} />}
-                  >
-                    Delete Selected
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Airdrop Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredAndSortedAirdrops.map((airdrop) => (
-            <AirdropCard
-              key={airdrop.id}
-              airdrop={airdrop}
-              onEdit={openModalForEdit}
-              onDelete={handleDeleteAirdrop}
-            />
-          ))}
+        {/* View Mode Toggle and Batch Actions */}
+        <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+          <div className="flex items-center gap-2 bg-gray-100 dark:bg-card-dark/60 p-1 rounded-lg">
+            <Button 
+              variant={viewMode === 'grid' ? 'primary' : 'ghost'} 
+              size="sm" 
+              onClick={() => setViewMode('grid')} 
+              className="p-1.5 h-auto"
+            >
+              <LayoutGrid size={18}/>
+            </Button>
+            <Button 
+              variant={viewMode === 'list' ? 'primary' : 'ghost'} 
+              size="sm" 
+              onClick={() => setViewMode('list')} 
+              className="p-1.5 h-auto"
+            >
+              <List size={18}/>
+            </Button>
+          </div>
+          
+          {selectedAirdropIds.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium">
+                {selectedAirdropIds.length} airdrop(s) selected
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsBatchEditModalOpen(true)}
+                leftIcon={<Edit size={16} />}
+              >
+                Batch Edit
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleBatchArchiveOrRestore(true)}
+                leftIcon={<Archive size={16} />}
+              >
+                Archive Selected
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => handleBatchArchiveOrRestore(false)}
+                leftIcon={<ClearIcon size={16} />}
+              >
+                Delete Selected
+              </Button>
+            </div>
+          )}
         </div>
 
-        {/* Empty State */}
-        {filteredAndSortedAirdrops.length === 0 && (
+        {/* Airdrop Display */}
+        {filteredAndSortedAirdrops.length === 0 ? (
           <Card variant="default" padding="xl">
             <CardContent className="text-center py-12">
               <Gift size={48} className="mx-auto text-muted mb-4" />
@@ -440,7 +552,7 @@ export const AirdropListPage: React.FC = () => {
               {!searchTerm && filterStatus === '' && filterPriority === '' && (
                 <Button
                   variant="primary"
-                  onClick={openModalForCreate}
+                  onClick={() => openModalForCreate()}
                   leftIcon={<Plus size={16} />}
                 >
                   Add Your First Airdrop
@@ -448,37 +560,91 @@ export const AirdropListPage: React.FC = () => {
               )}
             </CardContent>
           </Card>
+        ) : viewMode === 'grid' ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredAndSortedAirdrops.map((airdrop) => (
+              <AirdropCard
+                key={airdrop.id}
+                airdrop={airdrop}
+                onEdit={openModalForEdit}
+                onDelete={handleDeleteAirdrop}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="bg-card-light dark:bg-card-dark rounded-xl shadow-md overflow-hidden">
+            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
+              <thead className="bg-gray-50 dark:bg-gray-800/50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-muted-light dark:text-muted-dark uppercase tracking-wider">Project</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-muted-light dark:text-muted-dark uppercase tracking-wider">My Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-muted-light dark:text-muted-dark uppercase tracking-wider">Official Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-muted-light dark:text-muted-dark uppercase tracking-wider">Priority</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-muted-light dark:text-muted-dark uppercase tracking-wider w-32">Progress</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-muted-light dark:text-muted-dark uppercase tracking-wider">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                {filteredAndSortedAirdrops.map(airdrop => (
+                  <AirdropListItem
+                    key={airdrop.id}
+                    airdrop={airdrop}
+                    onEdit={openModalForEdit}
+                    onDelete={handleDeleteAirdrop}
+                    onToggleArchive={(id) => updateAirdrop({ ...airdrop, isArchived: !airdrop.isArchived })}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
 
         {/* Modals */}
-        <Modal
+        <AirdropFormModal
           isOpen={isModalOpen}
           onClose={closeModal}
-          title={editingAirdrop ? 'Edit Airdrop' : 'Add New Airdrop'}
-          size="lg"
-        >
-          <AirdropForm
-            onSubmit={handleFormSubmit}
-            initialData={editingAirdrop}
-            onClose={closeModal}
-          />
-        </Modal>
+          onSubmit={handleFormSubmit}
+          initialAirdrop={editingAirdrop}
+          mode={editingAirdrop ? 'edit' : 'create'}
+        />
 
         <BatchEditAirdropsModal
           isOpen={isBatchEditModalOpen}
           onClose={() => setIsBatchEditModalOpen(false)}
-          selectedCount={selectedAirdropIds.length}
-          onSubmit={handleBatchEdit}
+          selectedAirdropIds={selectedAirdropIds}
         />
 
-        <Modal isOpen={isBatchNotesModalOpen} onClose={() => setIsBatchNotesModalOpen(false)} title={t('airdrop_list_bulk_notes_modal_title', {count:selectedAirdropIds.length, defaultValue:`Bulk Add Notes to ${selectedAirdropIds.length} Airdrop(s)`})} size="md">
-          <Textarea id="bulk-airdrop-notes" label={t('airdrop_list_bulk_notes_label', {defaultValue:"Note to Append:"})} value={bulkNotes} onChange={(e: any) => setBulkNotes(e.target.value)} placeholder={t('airdrop_list_bulk_notes_placeholder', {defaultValue:"Enter notes to append to all selected airdrops..."})} rows={5} />
-          <div className="mt-4 flex justify-end space-x-2">
-              <Button variant="outline" onClick={() => { setIsBatchNotesModalOpen(false); setBulkNotes(''); }}>{t('common_cancel')}</Button>
-              <Button onClick={handleBulkAddNotesSubmit} disabled={!bulkNotes.trim() || isBatchProcessing} leftIcon={isBatchProcessing ? <Loader2 size={16} className="animate-spin"/> : undefined}>{t('airdrop_list_bulk_notes_add_button', {defaultValue:'Add Notes'})}</Button>
+        <Modal isOpen={isBatchNotesModalOpen} onClose={() => setIsBatchNotesModalOpen(false)} title="Add Notes to Selected Airdrops">
+          <div className="space-y-4">
+            <Textarea
+              placeholder="Enter notes to append to all selected airdrops..."
+              value={bulkNotes}
+              onChange={(e: any) => setBulkNotes(e.target.value)}
+              rows={4}
+            />
+            <div className="flex justify-end space-x-2">
+              <Button variant="outline" onClick={() => setIsBatchNotesModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button variant="primary" onClick={handleBulkAddNotesSubmit} disabled={!bulkNotes.trim() || isBatchProcessing}>
+                {isBatchProcessing ? 'Adding...' : 'Add Notes'}
+              </Button>
+            </div>
           </div>
         </Modal>
-        <AddAirdropTutorial isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
+
+        <Modal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} title="Airdrop Tutorial" size="lg">
+          <AddAirdropTutorial 
+            onComplete={() => setIsTutorialOpen(false)}
+            onSkip={() => setIsTutorialOpen(false)}
+          />
+        </Modal>
+        
+        <AirdropScraperModal 
+          isOpen={isScraperModalOpen} 
+          onClose={() => setIsScraperModalOpen(false)} 
+          onScrape={handleScrapeAndPrefill} 
+        />
       </div>
     </PageWrapper>
   );

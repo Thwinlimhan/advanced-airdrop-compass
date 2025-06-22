@@ -1,394 +1,688 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { PageWrapper } from '../../components/layout/PageWrapper';
-import { Card } from '../../design-system/components/Card';
+import { Card, CardHeader, CardContent } from '../../design-system/components/Card';
 import { Button } from '../../design-system/components/Button';
-import { useAppContext } from '../../contexts/AppContext';
-import { Airdrop, PortfolioOverviewData, PortfolioAirdropPerformance, NftLogEntry } from '../../types';
-import { DollarSign, TrendingUp, TrendingDown, Award, AlertOctagon, BarChart3, HelpCircle, ChevronsRight, PieChart, RefreshCw, Image as ImageIcon, Eye, ChevronDown, ChevronRight, Brain, Lightbulb } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import { parseMonetaryValue, formatCurrency } from '../../utils/formatting';
-import { AIRDROP_POTENTIAL_OPTIONS, DISTINCT_COLORS } from '../../constants';
+import { Input } from '../../design-system/components/Input';
+import { Select } from '../../design-system/components/Select';
+import { useAirdropStore } from '../../stores/airdropStore';
+import { useWalletStore } from '../../stores/walletStore';
+import { useYieldPositionStore } from '../../stores/yieldPositionStore';
+import { useWatchlistStore } from '../../stores/watchlistStore';
+import { Airdrop, Wallet, YieldPosition, WatchlistItem } from '../../types';
+import { 
+  Wallet as WalletIcon, 
+  TrendingUp, 
+  DollarSign, 
+  Users, 
+  Target,
+  Eye,
+  Plus,
+  Edit,
+  Trash2,
+  RefreshCw,
+  Filter,
+  Search,
+  BarChart3,
+  PieChart,
+  Activity,
+  Calendar,
+  Clock,
+  CheckCircle,
+  AlertTriangle,
+  Star,
+  ExternalLink,
+  MoreHorizontal,
+  Settings,
+  Download,
+  Upload,
+  AlertCircle,
+  Info
+} from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
 import { useTranslation } from '../../hooks/useTranslation';
-import { EnhancedLineChart as LineChart } from '../../components/charts/LineChart';
-import { EnhancedDoughnutChart as DoughnutChart } from '../../components/charts/DoughnutChart';
-import { ChartData } from 'chart.js';
-
-
-const NftCollectionGroup: React.FC<{collectionName: string; nfts: (NftLogEntry & {walletName: string, walletId: string})[]; t: (key: string, options?: any) => string;}> = ({ collectionName, nfts, t }) => {
-  const [isOpen, setIsOpen] = useState(true);
-  const collectionTotalFloorValue = useMemo(() => {
-    return nfts.reduce((sum, nft) => sum + parseMonetaryValue(nft.estimatedFloorPrice), 0);
-  }, [nfts]);
-
-  return (
-    <div className="mb-4">
-      <Button variant="ghost" onClick={() => setIsOpen(!isOpen)} className="w-full flex justify-between items-center p-2 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600">
-        <span className="font-semibold text-text-light dark:text-text-dark">{collectionName} ({nfts.length})</span>
-        <div className="flex items-center">
-            {collectionTotalFloorValue > 0 && (
-                <span className="text-xs font-medium text-green-600 dark:text-green-400 mr-2">
-                    {t('portfolio_nft_collection_value_label', {defaultValue: 'Est. Collection Value'})}: {formatCurrency(collectionTotalFloorValue)}
-                </span>
-            )}
-            {isOpen ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-        </div>
-      </Button>
-      {isOpen && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mt-2 pl-2">
-          {nfts.map(nft => (
-            <Card key={`${nft.walletId}-${nft.id}`} className="bg-card-light dark:bg-card-dark shadow-sm">
-              {nft.imageUrl ? (
-                <img src={nft.imageUrl} alt={nft.name} className="w-full h-32 object-cover rounded-t-md mb-2" onError={(e) => (e.currentTarget.style.display = 'none')} />
-              ) : (
-                <div className="w-full h-32 bg-gray-200 dark:bg-gray-600 flex items-center justify-center rounded-t-md mb-2 text-gray-400">
-                  <ImageIcon size={28} />
-                </div>
-              )}
-              <h5 className="font-medium text-sm text-primary-light dark:text-primary-dark truncate" title={nft.name}>{nft.name}</h5>
-              {nft.tokenId && <p className="text-xs text-muted-light dark:text-muted-dark">ID: {nft.tokenId}</p>}
-              <p className="text-xs text-muted-light dark:text-muted-dark">Wallet: <Link to={`/wallets`} className="hover:underline">{nft.walletName}</Link></p> {/* Updated link to /wallets for general view */}
-              {nft.purchasePrice && <p className="text-xs text-muted-light dark:text-muted-dark">Bought: {nft.purchasePrice} ({nft.purchaseDate ? new Date(nft.purchaseDate).toLocaleDateString() : 'N/A'})</p>}
-              {nft.estimatedFloorPrice && <p className="text-xs text-green-600 dark:text-green-400">Est. Floor: {nft.estimatedFloorPrice}</p>}
-              {nft.notes && <p className="text-xs italic mt-1 text-gray-500 dark:text-gray-400 line-clamp-2" title={nft.notes}>{nft.notes}</p>}
-            </Card>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
+import { useNavigate } from 'react-router-dom';
 
 export const PortfolioPage: React.FC = () => {
-  const { appData, fetchTokenPricesAndUpdateLogs } = useAppContext();
-  const { t } = useTranslation();
+  const { airdrops } = useAirdropStore();
+  const { wallets } = useWalletStore();
+  const { yieldPositions } = useYieldPositionStore();
+  const { watchlist } = useWatchlistStore();
   const { addToast } = useToast();
-  const [isPriceLoading, setIsPriceLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'nfts' | 'aggregated_pl'>('overview');
+  const { t } = useTranslation();
+  const navigate = useNavigate();
 
-  const handleRefreshPrices = async () => {
-    setIsPriceLoading(true);
-    addToast("Simulating fetching latest token prices...", "info", 2000);
-    await fetchTokenPricesAndUpdateLogs(appData.airdrops);
-    setIsPriceLoading(false);
-    addToast("Token prices updated (simulated). Portfolio data re-calculated.", "success");
-  };
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedBlockchain, setSelectedBlockchain] = useState<string>('all');
+  const [selectedStatus, setSelectedStatus] = useState<string>('all');
+  const [selectedPotential, setSelectedPotential] = useState<string>('all');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [sortBy, setSortBy] = useState<'name' | 'status' | 'potential' | 'timeSpent' | 'tasks'>('name');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
-  const portfolioData = useMemo((): PortfolioOverviewData => {
-    let totalCosts = 0;
-    let totalSales = 0;
-    let totalUnrealizedValue = 0;
-    const airdropPerformance: PortfolioAirdropPerformance[] = [];
-    const potentialCounts: Record<string, number> = {};
-    AIRDROP_POTENTIAL_OPTIONS.forEach(opt => potentialCounts[opt] = 0);
-    const tokenValues: Record<string, {totalValue: number, totalQuantity: number}> = {};
+  // Data validation and sanitization
+  const validatedAirdrops = useMemo(() => {
+    return airdrops.map(airdrop => ({
+      ...airdrop,
+      projectName: airdrop.projectName || 'Unnamed Project',
+      blockchain: airdrop.blockchain || 'Unknown',
+      myStatus: airdrop.myStatus || 'Not Started',
+      potential: airdrop.potential || 'Unknown',
+      timeSpentHours: Math.max(0, airdrop.timeSpentHours || 0),
+      tasks: airdrop.tasks || [],
+      transactions: airdrop.transactions || [],
+      claimedTokens: airdrop.claimedTokens || [],
+      notes: airdrop.notes || '',
+      description: airdrop.description || ''
+    }));
+  }, [airdrops]);
 
-    const activeAirdrops = appData.airdrops.filter(a => !a.isArchived);
+  const validatedWallets = useMemo(() => {
+    return wallets.map(wallet => ({
+      ...wallet,
+      name: wallet.name || 'Unnamed Wallet',
+      address: wallet.address || 'No address',
+      blockchain: wallet.blockchain || 'Unknown',
+      group: wallet.group || 'No group',
+      balanceSnapshots: wallet.balanceSnapshots || [],
+      gasLogs: wallet.gasLogs || [],
+      interactionLogs: wallet.interactionLogs || [],
+      nftPortfolio: wallet.nftPortfolio || []
+    }));
+  }, [wallets]);
 
-    activeAirdrops.forEach((airdrop: Airdrop) => {
-      let airdropTransactionCosts = 0;
-      airdrop.transactions.forEach(tx => { airdropTransactionCosts += parseMonetaryValue(tx.cost); });
+  const validatedYieldPositions = useMemo(() => {
+    return yieldPositions.map(position => ({
+      ...position,
+      platformName: position.platformName || 'Unknown Platform',
+      assetSymbol: position.assetSymbol || 'Unknown Asset',
+      currentApy: Math.max(0, position.currentApy || 0),
+      amountStaked: Math.max(0, position.amountStaked || 0),
+      currentValue: Math.max(0, position.currentValue || 0)
+    }));
+  }, [yieldPositions]);
 
-      let airdropAcquisitionValue = 0;
-      let airdropSaleValue = 0;
-      airdrop.claimedTokens.forEach(log => {
-        const acqCostPerToken = parseMonetaryValue(log.acquisitionCostPerToken);
-        airdropAcquisitionValue += (acqCostPerToken * log.quantity);
+  // Calculate portfolio metrics with validation
+  const portfolioMetrics = useMemo(() => {
+    const totalAirdrops = validatedAirdrops.length;
+    const activeAirdrops = validatedAirdrops.filter(a => a.myStatus === 'In Progress').length;
+    const completedAirdrops = validatedAirdrops.filter(a => a.myStatus === 'Completed').length;
+    const totalWallets = validatedWallets.length;
+    const totalYieldPositions = validatedYieldPositions.length;
+    const totalWatchlistItems = watchlist.length;
 
-        if (log.salePricePerToken !== undefined && log.salePricePerToken !== null) {
-          airdropSaleValue += (parseMonetaryValue(log.salePricePerToken) * log.quantity);
-        } else if (log.currentMarketPricePerToken !== undefined && log.currentMarketPricePerToken !== null) {
-            const currentVal = parseMonetaryValue(log.currentMarketPricePerToken) * log.quantity;
-            totalUnrealizedValue += currentVal;
-             if (!tokenValues[log.symbol.toUpperCase()]) tokenValues[log.symbol.toUpperCase()] = {totalValue: 0, totalQuantity: 0};
-            tokenValues[log.symbol.toUpperCase()].totalValue += currentVal;
-            tokenValues[log.symbol.toUpperCase()].totalQuantity += log.quantity;
-        }
-      });
+    const totalTimeSpent = validatedAirdrops.reduce((sum, a) => sum + a.timeSpentHours, 0);
+    const averageTimePerAirdrop = totalAirdrops > 0 ? totalTimeSpent / totalAirdrops : 0;
 
-      totalCosts += airdropTransactionCosts + airdropAcquisitionValue;
-      totalSales += airdropSaleValue;
-      const netPLForAirdrop = airdropSaleValue - airdropAcquisitionValue - airdropTransactionCosts;
-      airdropPerformance.push({ id: airdrop.id, name: airdrop.projectName, netPL: netPLForAirdrop });
+    const totalTasks = validatedAirdrops.reduce((sum, a) => sum + a.tasks.length, 0);
+    const completedTasks = validatedAirdrops.reduce((sum, a) => sum + a.tasks.filter(t => t.completed).length, 0);
+    const taskCompletionRate = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
 
-      if (airdrop.potential && potentialCounts[airdrop.potential] !== undefined) potentialCounts[airdrop.potential]++;
-      else potentialCounts['Unknown'] = (potentialCounts['Unknown'] || 0) + 1;
-    });
+    const totalTransactions = validatedAirdrops.reduce((sum, a) => sum + a.transactions.length, 0);
+    const totalClaimedTokens = validatedAirdrops.filter(a => a.claimedTokens.length > 0).length;
 
-    const netProfitLoss = totalSales - totalCosts;
-    airdropPerformance.sort((a, b) => b.netPL - a.netPL);
-    const potentialDistribution = Object.entries(potentialCounts).map(([name, count]) => ({ name, count })).filter(item => item.count > 0).sort((a,b) => AIRDROP_POTENTIAL_OPTIONS.indexOf(a.name) - AIRDROP_POTENTIAL_OPTIONS.indexOf(b.name));
-
-    const mockHistory: {date: string, value: number}[] = [];
-    const currentPortfolioValue = totalSales + totalUnrealizedValue - totalCosts;
-    let runningTotal = currentPortfolioValue * (0.3 + Math.random() * 0.4);
-
-    for(let i=6; i>=0; i--) {
-        const date = new Date();
-        date.setDate(date.getDate() - i*30);
-        let fluctuationFactor = (Math.random() - 0.45) * 0.3;
-        if (i < 2) {
-            runningTotal = runningTotal * (0.6 + Math.random() * 0.1) + currentPortfolioValue * (0.3 + Math.random() * 0.1);
-        } else {
-            runningTotal += runningTotal * fluctuationFactor;
-        }
-        mockHistory.push({ date: date.toISOString().split('T')[0], value: Math.max(0, parseFloat(runningTotal.toFixed(2))) });
-    }
-    if (mockHistory.length > 0 && mockHistory[mockHistory.length-1].value !== parseFloat(currentPortfolioValue.toFixed(2))) {
-         mockHistory[mockHistory.length-1].value = parseFloat(currentPortfolioValue.toFixed(2));
-    }
-
-    const tokenAllocation = Object.entries(tokenValues)
-        .map(([symbol, data]) => ({ symbol, value: data.totalValue, count: data.totalQuantity}))
-        .sort((a,b) => b.value - a.value);
-
+    // Calculate potential value distribution
+    const potentialDistribution = {
+      High: validatedAirdrops.filter(a => a.potential === 'High').length,
+      Medium: validatedAirdrops.filter(a => a.potential === 'Medium').length,
+      Low: validatedAirdrops.filter(a => a.potential === 'Low').length,
+      Unknown: validatedAirdrops.filter(a => !a.potential || a.potential === 'Unknown').length
+    };
 
     return {
-      totalCosts, totalSales, netProfitLoss, totalUnrealizedValue,
-      topProfitableAirdrops: airdropPerformance.filter(a => a.netPL > 0).slice(0, 5),
-      topLossAirdrops: airdropPerformance.filter(a => a.netPL < 0).sort((a,b) => a.netPL - b.netPL).slice(0, 5),
-      potentialDistribution,
-      historicalValue: mockHistory,
-      tokenAllocation: tokenAllocation,
+      totalAirdrops,
+      activeAirdrops,
+      completedAirdrops,
+      totalWallets,
+      totalYieldPositions,
+      totalWatchlistItems,
+      totalTimeSpent,
+      averageTimePerAirdrop,
+      totalTasks,
+      completedTasks,
+      taskCompletionRate,
+      totalTransactions,
+      totalClaimedTokens,
+      potentialDistribution
     };
-  }, [appData.airdrops]);
+  }, [validatedAirdrops, validatedWallets, validatedYieldPositions, watchlist]);
 
-  const allNftsByCollection = useMemo(() => {
-    const collections: Record<string, (NftLogEntry & {walletName: string, walletId: string})[]> = {};
-    appData.wallets.forEach(wallet => {
-        (wallet.nftPortfolio || []).forEach(nft => {
-            const collectionKey = nft.collectionName || 'Uncategorized';
-            if (!collections[collectionKey]) {
-                collections[collectionKey] = [];
-            }
-            collections[collectionKey].push({...nft, walletName: wallet.name, walletId: wallet.id });
-        });
+  // Advanced filtering with validation
+  const filteredAirdrops = useMemo(() => {
+    let filtered = validatedAirdrops.filter(airdrop => {
+      const matchesSearch = airdrop.projectName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           airdrop.blockchain.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           airdrop.description.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesBlockchain = selectedBlockchain === 'all' || airdrop.blockchain === selectedBlockchain;
+      const matchesStatus = selectedStatus === 'all' || airdrop.myStatus === selectedStatus;
+      const matchesPotential = selectedPotential === 'all' || airdrop.potential === selectedPotential;
+      
+      return matchesSearch && matchesBlockchain && matchesStatus && matchesPotential;
     });
-    for (const key in collections) {
-        collections[key].sort((a,b) => a.name.localeCompare(b.name));
+
+    // Sorting
+    filtered.sort((a, b) => {
+      let comparison = 0;
+      switch (sortBy) {
+        case 'name':
+          comparison = a.projectName.localeCompare(b.projectName);
+          break;
+        case 'status':
+          comparison = a.myStatus.localeCompare(b.myStatus);
+          break;
+        case 'potential':
+          comparison = a.potential.localeCompare(b.potential);
+          break;
+        case 'timeSpent':
+          comparison = a.timeSpentHours - b.timeSpentHours;
+          break;
+        case 'tasks':
+          comparison = a.tasks.length - b.tasks.length;
+          break;
+      }
+      return sortOrder === 'asc' ? comparison : -comparison;
+    });
+
+    return filtered;
+  }, [validatedAirdrops, searchTerm, selectedBlockchain, selectedStatus, selectedPotential, sortBy, sortOrder]);
+
+  const blockchains = useMemo(() => Array.from(new Set(validatedAirdrops.map(a => a.blockchain))).sort(), [validatedAirdrops]);
+  const statuses = useMemo(() => Array.from(new Set(validatedAirdrops.map(a => a.myStatus))).sort(), [validatedAirdrops]);
+  const potentials = useMemo(() => Array.from(new Set(validatedAirdrops.map(a => a.potential))).sort(), [validatedAirdrops]);
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'Completed': return 'text-green-600 bg-green-100 dark:bg-green-900 dark:text-green-400';
+      case 'In Progress': return 'text-blue-600 bg-blue-100 dark:bg-blue-900 dark:text-blue-400';
+      case 'Not Started': return 'text-gray-600 bg-gray-100 dark:bg-gray-900 dark:text-gray-400';
+      case 'Abandoned': return 'text-red-600 bg-red-100 dark:bg-red-900 dark:text-red-400';
+      default: return 'text-gray-600 bg-gray-100 dark:bg-gray-900 dark:text-gray-400';
     }
-    return Object.entries(collections).sort((a,b) => a[0].localeCompare(b[0]));
-  }, [appData.wallets]);
-
-  const totalAllNftsValue = useMemo(() => {
-    return allNftsByCollection.reduce((sum, [, nftsInCollection]) => {
-        return sum + nftsInCollection.reduce((collectionSum, nft) => collectionSum + parseMonetaryValue(nft.estimatedFloorPrice), 0);
-    }, 0);
-  }, [allNftsByCollection]);
-
-
-  const historicalChartData: ChartData<'line'> = {
-    labels: (portfolioData.historicalValue || []).map(d => new Date(d.date).toLocaleDateString('en-US', {month:'short', day:'numeric'})),
-    datasets: [{
-        label: 'Portfolio Value (Simulated)',
-        data: (portfolioData.historicalValue || []).map(d => d.value),
-        fill: true,
-        tension: 0.1,
-    }]
   };
 
-  const tokenAllocationChartData: ChartData<'doughnut'> = {
-    labels: (portfolioData.tokenAllocation || []).slice(0,10).map(ta => ta.symbol),
-    datasets: [{
-        label: 'Token Allocation by Value',
-        data: (portfolioData.tokenAllocation || []).slice(0,10).map(ta => ta.value),
-        backgroundColor: DISTINCT_COLORS.slice(0, (portfolioData.tokenAllocation || []).slice(0,10).length),
-        hoverOffset: 4,
-    }]
+  const getPotentialColor = (potential: string) => {
+    switch (potential) {
+      case 'High': return 'text-green-600 bg-green-100 dark:bg-green-900 dark:text-green-400';
+      case 'Medium': return 'text-yellow-600 bg-yellow-100 dark:bg-yellow-900 dark:text-yellow-400';
+      case 'Low': return 'text-red-600 bg-red-100 dark:bg-red-900 dark:text-red-400';
+      default: return 'text-gray-600 bg-gray-100 dark:bg-gray-900 dark:text-gray-400';
+    }
   };
 
-  const MetricCard: React.FC<{ title: string; value: number; icon: React.ElementType; colorClass?: string; isCurrency?: boolean; helpText?: string }> =
-    ({ title, value, icon: Icon, colorClass = 'text-primary-light dark:text-primary-dark', isCurrency = true, helpText }) => (
-    <Card className="flex-1 min-w-[200px] sm:min-w-[250px] bg-gray-50 dark:bg-gray-800">
-      <div className="flex items-center space-x-3 sm:space-x-4">
-        <div className={`p-2 sm:p-3 rounded-full bg-opacity-10 ${colorClass.replace('text-', 'bg-')}`}> <Icon size={24} className={colorClass} /> </div>
-        <div>
-            <div className="flex items-center">
-                <p className="text-xs sm:text-sm font-medium text-muted-light dark:text-muted-dark">{title}</p>
-                {helpText && <span title={helpText}><HelpCircle size={12} className="ml-1.5 text-gray-400 cursor-help" /></span>}
-            </div>
-            <p className={`text-xl sm:text-3xl font-bold ${colorClass}`}> {isCurrency ? formatCurrency(value) : value.toLocaleString()} </p>
-        </div>
-      </div>
-    </Card>
-  );
+  // Quick actions
+  const handleQuickAction = (action: string, airdropId: string) => {
+    switch (action) {
+      case 'view':
+        navigate(`/airdrops/${airdropId}`);
+        break;
+      case 'edit':
+        navigate(`/airdrops/${airdropId}/edit`);
+        break;
+      case 'delete':
+        if (window.confirm('Are you sure you want to delete this airdrop?')) {
+          // Handle delete
+          addToast('Delete functionality would be implemented here', 'info');
+        }
+        break;
+      case 'duplicate':
+        addToast('Duplicate functionality would be implemented here', 'info');
+        break;
+    }
+  };
 
-  const PerformanceList: React.FC<{ title: string; items: PortfolioAirdropPerformance[]; icon: React.ElementType; itemColorClass: string }> =
-    ({ title, items, icon: Icon, itemColorClass }) => (
-    <Card className="h-full">
-        <h4 className="text-lg font-semibold text-text-light dark:text-text-dark mb-3 flex items-center">
-            <Icon size={20} className={`mr-2 ${itemColorClass}`} /> {title}
-        </h4>
-        {items.length === 0 ? <p className="text-sm text-muted-light dark:text-muted-dark">No airdrops fit this category yet.</p> : (
-            <ul className="space-y-2">
-                {items.map(item => (
-                    <li key={item.id} className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-800 rounded-md text-sm">
-                        <Link to={`/airdrops/${item.id}`} className="hover:underline text-primary-light dark:text-primary-dark truncate pr-2" title={item.name}>{item.name}</Link>
-                        <span className={`font-semibold ${item.netPL >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                            {formatCurrency(item.netPL)}
-                        </span>
-                    </li>
-                ))}
-            </ul>
-        )}
-    </Card>
-  );
-
-  const TabButton: React.FC<{tabId: 'overview' | 'nfts' | 'aggregated_pl', label: string, icon: React.ElementType}> = ({tabId, label, icon: Icon}) => (
-    <Button
-        variant={activeTab === tabId ? 'primary' : 'outline'}
-        onClick={() => setActiveTab(tabId)}
-        leftIcon={<Icon size={16}/>}
-        className="flex-1 sm:flex-none"
-    >
-        {label}
-    </Button>
-  );
+  const handleExportPortfolio = () => {
+    const data = {
+      airdrops: validatedAirdrops,
+      wallets: validatedWallets,
+      yieldPositions: validatedYieldPositions,
+      watchlist,
+      metrics: portfolioMetrics,
+      exportDate: new Date().toISOString()
+    };
+    
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `portfolio-export-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    addToast('Portfolio exported successfully', 'success');
+  };
 
   return (
     <PageWrapper>
-      <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-6 gap-4">
-        <div className="flex items-center">
-          <BarChart3 size={28} className="mr-3 text-primary-light dark:text-primary-dark" />
-          <h2 className="text-2xl font-semibold text-text-light dark:text-text-dark">{t('nav_portfolio_overview')}</h2>
-        </div>
-         <Button onClick={handleRefreshPrices} leftIcon={<RefreshCw size={16} className={isPriceLoading ? "animate-spin" : ""}/>} disabled={isPriceLoading}>
-          {isPriceLoading ? "Refreshing Prices..." : "Refresh Prices (Simulated)"}
-        </Button>
-      </div>
-
-      <div className="mb-4 flex flex-wrap gap-2">
-        <TabButton tabId="overview" label="Airdrop P&L" icon={DollarSign}/>
-        <TabButton tabId="aggregated_pl" label={t('portfolio_aggregated_pl_tab')} icon={PieChart}/>
-        <TabButton tabId="nfts" label={t('portfolio_nft_holdings_tab')} icon={ImageIcon}/>
-      </div>
-
-      {activeTab === 'overview' && (
-        <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-                <MetricCard title="Total Costs (Gas & Acquisition)" value={portfolioData.totalCosts} icon={TrendingDown} colorClass="text-red-500 dark:text-red-400" helpText="Sum of all logged transaction costs for airdrops and token acquisition costs." />
-                <MetricCard title="Total Realized Sales" value={portfolioData.totalSales} icon={TrendingUp} colorClass="text-green-500 dark:text-green-400" helpText="Total value from selling claimed tokens."/>
-                <MetricCard title="Current Unrealized Value" value={portfolioData.totalUnrealizedValue || 0} icon={Eye} colorClass="text-blue-500 dark:text-blue-400" helpText="Estimated current market value of unsold claimed tokens."/>
-                <MetricCard title="Overall Net P/L (Realized)" value={portfolioData.netProfitLoss} icon={DollarSign} colorClass={portfolioData.netProfitLoss >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'} helpText="Total Sales minus Total Costs (Acquisition + Transaction). Does not include unrealized value." />
-            </div>
-
-            <p className="text-xs text-center text-muted-light dark:text-muted-dark p-2 bg-yellow-50 dark:bg-yellow-900/50 rounded-md">
-              <strong>Note on P&L Calculation:</strong> Current Profit/Loss (P&L) calculations are based on simple sums of logged costs and sales. For precise tax reporting (e.g., FIFO/LIFO), utilize the 'Acquisition Lot ID' when logging claimed tokens and 'Purchase Lot ID' for NFTs. Full cost-basis tracking features will be enhanced in future updates.
+      <div className="p-6 space-y-6">
+        {/* Header */}
+        <Card variant="elevated" padding="lg">
+          <CardHeader>
+            <h3 className="text-lg font-semibold flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <WalletIcon size={24} className="text-accent" />
+                Portfolio Overview
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleExportPortfolio}
+                  leftIcon={<Download size={16} />}
+                >
+                  Export
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => window.location.reload()}
+                  leftIcon={<RefreshCw size={16} />}
+                >
+                  Refresh
+                </Button>
+              </div>
+            </h3>
+          </CardHeader>
+          <CardContent>
+            <p className="text-secondary">
+              Comprehensive view of your crypto farming portfolio and assets.
             </p>
-
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <PerformanceList title="Top Profitable Airdrops" items={portfolioData.topProfitableAirdrops} icon={Award} itemColorClass="text-green-500" />
-                <PerformanceList title="Top Loss-Making Airdrops" items={portfolioData.topLossAirdrops} icon={AlertOctagon} itemColorClass="text-red-500" />
-                <Card className="h-full">
-                    <h4 className="text-lg font-semibold text-text-light dark:text-text-dark mb-3 flex items-center"><ChevronsRight size={20} className="mr-2 text-purple-500"/>Airdrop Potential Distribution</h4>
-                    {portfolioData.potentialDistribution && portfolioData.potentialDistribution.length > 0 ? (
-                        <ul className="space-y-1 text-sm">
-                            {portfolioData.potentialDistribution.map(item => (
-                                <li key={item.name} className="flex justify-between p-1.5 bg-gray-50 dark:bg-gray-800 rounded">
-                                    <span>{item.name}</span>
-                                    <span className="font-medium">{item.count} airdrop(s)</span>
-                                </li>
-                            ))}
-                        </ul>
-                    ): <p className="text-sm text-muted-light dark:text-muted-dark">No potential data logged for airdrops.</p>}
-                </Card>
-            </div>
-
-             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                 <Card>
-                    <h4 className="text-lg font-semibold text-text-light dark:text-text-dark mb-3 flex items-center"><PieChart size={20} className="mr-2 text-teal-500"/>Unsold Token Allocation (by Value)</h4>
-                     <div className="h-64 sm:h-72">
-                        {(portfolioData.tokenAllocation?.length || 0) > 0 ? (
-                            <DoughnutChart data={tokenAllocationChartData} options={{ maintainAspectRatio: false, plugins: { legend: { position: 'right'}}}} />
-                        ) : <p className="text-sm text-muted-light dark:text-muted-dark text-center py-4">No token allocation data. Log claimed tokens and their market prices.</p>}
-                    </div>
-                     <p className="text-xs text-muted-light dark:text-muted-dark mt-2 text-center">Based on manually updated/simulated current market prices. Top 10 shown.</p>
-                </Card>
-                <Card>
-                    <h4 className="text-lg font-semibold text-text-light dark:text-text-dark mb-3 flex items-center"><BarChart3 size={20} className="mr-2 text-orange-500"/>Portfolio Value Over Time (Simulated)</h4>
-                     <div className="h-64 sm:h-72">
-                        {(portfolioData.historicalValue?.length || 0) > 1 ? (
-                            <LineChart data={historicalChartData} options={{ maintainAspectRatio: false, plugins: { legend: { display: false }}}} />
-                        ) : <p className="text-sm text-muted-light dark:text-muted-dark text-center py-4">Not enough historical data to display chart.</p>}
-                    </div>
-                    <p className="text-xs text-muted-light dark:text-muted-dark mt-2 text-center">This chart is for illustrative purposes only based on simulated historical data.</p>
-                </Card>
-            </div>
-
-             <Card>
-                <h3 className="text-lg font-semibold text-text-light dark:text-text-dark mb-3 flex items-center"><Brain size={20} className="mr-2 text-purple-500"/>AI Portfolio Insights (Conceptual)</h3>
-                <p className="text-sm text-muted-light dark:text-muted-dark mb-2">Imagine asking your portfolio questions in plain language!</p>
-                <ul className="list-disc list-inside text-sm text-text-light dark:text-text-dark space-y-1 pl-4 mb-3">
-                    <li>"Which airdrops cost me the most in gas fees?"</li>
-                    <li>"What's my unrealized P&L on Arbitrum airdrops?"</li>
-                    <li>"Show me tokens I've held for more than 6 months."</li>
-                    <li>"Which wallets have the highest interaction count this month?"</li>
-                </ul>
-                <p className="text-sm text-muted-light dark:text-muted-dark mb-3">
-                    This conceptual feature would leverage AI to analyze your logged data (airdrops, wallets, transactions, P&L) to provide answers, helping you understand your crypto activities like never before.
-                </p>
-                <Link to="/learning/aiAnalyst">
-                    <Button variant="outline" leftIcon={<Lightbulb size={16}/>}>
-                        Explore Conceptual AI Analyst in Learning Hub
-                    </Button>
-                </Link>
-            </Card>
-
-        </div>
-      )}
-
-      {activeTab === 'nfts' && (
-         <Card>
-             <div className="mb-3 p-2 bg-blue-50 dark:bg-blue-900/30 rounded-md">
-                <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">
-                    Total Estimated NFT Portfolio Value: {formatCurrency(totalAllNftsValue)}
-                </p>
-                <p className="text-xs text-blue-600 dark:text-blue-400">
-                    Based on manually entered 'Estimated Floor Price' for each NFT.
-                </p>
-             </div>
-            {allNftsByCollection.length === 0 ? (
-                <p className="text-muted-light dark:text-muted-dark text-center py-6">No NFTs logged across your wallets yet. Add NFTs via the Wallet Manager.</p>
-            ) : (
-                <div className="space-y-4">
-                    {allNftsByCollection.map(([collectionName, nftsInCollection]) => (
-                       <NftCollectionGroup key={collectionName} collectionName={collectionName} nfts={nftsInCollection} t={t} />
-                    ))}
-                </div>
-            )}
-         </Card>
-      )}
-
-      {activeTab === 'aggregated_pl' && (
-        <Card>
-            <h4 className="text-lg font-semibold text-text-light dark:text-text-dark mb-3 flex items-center"><PieChart size={20} className="mr-2 text-teal-500"/>Aggregated Portfolio P&L (Simulated)</h4>
-            <p className="text-sm text-muted-light dark:text-muted-dark mb-4">
-                This tab provides a simulated view of aggregated Profit & Loss across all your wallets and assets.
-                True cross-wallet P&L tracking is complex and requires consistent cost-basis data for all assets.
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-4 bg-gray-100 dark:bg-gray-700 rounded-lg">
-                    <h4 className="font-semibold text-lg text-text-light dark:text-text-dark">Simulated Total Assets Value</h4>
-                    <p className="text-2xl text-blue-500 dark:text-blue-400">{formatCurrency((portfolioData.totalSales + (portfolioData.totalUnrealizedValue || 0)))}</p>
-                    <p className="text-xs text-muted-light dark:text-muted-dark">(Realized Sales + Current Unrealized Value)</p>
-                </div>
-                <div className="p-4 bg-gray-100 dark:bg-gray-700 rounded-lg">
-                    <h4 className="font-semibold text-lg text-text-light dark:text-text-dark">Simulated Total Investment Costs</h4>
-                    <p className="text-2xl text-red-500 dark:text-red-400">{formatCurrency(portfolioData.totalCosts)}</p>
-                    <p className="text-xs text-muted-light dark:text-muted-dark">(Sum of all transaction & acquisition costs)</p>
-                </div>
-                 <div className="md:col-span-2 p-4 bg-gray-100 dark:bg-gray-700 rounded-lg">
-                    <h4 className="font-semibold text-lg text-text-light dark:text-text-dark">Simulated Net Portfolio P/L</h4>
-                    <p className={`text-3xl font-bold ${((portfolioData.totalSales + (portfolioData.totalUnrealizedValue || 0)) - portfolioData.totalCosts) >= 0 ? 'text-green-500 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`}>
-                        {formatCurrency(((portfolioData.totalSales + (portfolioData.totalUnrealizedValue || 0)) - portfolioData.totalCosts))}
-                    </p>
-                    <p className="text-xs text-muted-light dark:text-muted-dark">(Total Assets Value - Total Investment Costs)</p>
-                </div>
-            </div>
+          </CardContent>
         </Card>
-      )}
+
+        {/* Portfolio Summary */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card variant="default" padding="md">
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Total Airdrops</p>
+                  <p className="text-2xl font-bold">{portfolioMetrics.totalAirdrops}</p>
+                  <p className="text-xs text-gray-500">
+                    {portfolioMetrics.activeAirdrops} active, {portfolioMetrics.completedAirdrops} completed
+                  </p>
+                </div>
+                <Target size={24} className="text-blue-500" />
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card variant="default" padding="md">
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Task Completion</p>
+                  <p className="text-2xl font-bold">{portfolioMetrics.taskCompletionRate.toFixed(1)}%</p>
+                  <p className="text-xs text-gray-500">
+                    {portfolioMetrics.completedTasks}/{portfolioMetrics.totalTasks} tasks
+                  </p>
+                </div>
+                <CheckCircle size={24} className="text-green-500" />
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card variant="default" padding="md">
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Time Spent</p>
+                  <p className="text-2xl font-bold">{portfolioMetrics.totalTimeSpent.toFixed(1)}h</p>
+                  <p className="text-xs text-gray-500">
+                    {portfolioMetrics.averageTimePerAirdrop.toFixed(1)}h avg per airdrop
+                  </p>
+                </div>
+                <Clock size={24} className="text-yellow-500" />
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card variant="default" padding="md">
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Assets</p>
+                  <p className="text-2xl font-bold">{portfolioMetrics.totalWallets + portfolioMetrics.totalYieldPositions}</p>
+                  <p className="text-xs text-gray-500">
+                    {portfolioMetrics.totalWallets} wallets, {portfolioMetrics.totalYieldPositions} yield positions
+                  </p>
+                </div>
+                <DollarSign size={24} className="text-purple-500" />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Filters and Search */}
+        <Card variant="default" padding="md">
+          <CardContent>
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="relative">
+                  <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                  <Input
+                    placeholder="Search airdrops..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                
+                <Select
+                  value={selectedBlockchain}
+                  onValueChange={(value) => setSelectedBlockchain(value as string)}
+                  options={[
+                    { value: 'all', label: 'All Blockchains' },
+                    ...blockchains.map(bc => ({ value: bc, label: bc }))
+                  ]}
+                />
+                
+                <Select
+                  value={selectedStatus}
+                  onValueChange={(value) => setSelectedStatus(value as string)}
+                  options={[
+                    { value: 'all', label: 'All Statuses' },
+                    ...statuses.map(status => ({ value: status, label: status }))
+                  ]}
+                />
+
+                <Select
+                  value={selectedPotential}
+                  onValueChange={(value) => setSelectedPotential(value as string)}
+                  options={[
+                    { value: 'all', label: 'All Potentials' },
+                    ...potentials.map(potential => ({ value: potential, label: potential }))
+                  ]}
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex gap-2">
+                  <Button
+                    variant={viewMode === 'grid' ? 'primary' : 'outline'}
+                    size="sm"
+                    onClick={() => setViewMode('grid')}
+                  >
+                    Grid
+                  </Button>
+                  <Button
+                    variant={viewMode === 'list' ? 'primary' : 'outline'}
+                    size="sm"
+                    onClick={() => setViewMode('list')}
+                  >
+                    List
+                  </Button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+                    leftIcon={<Filter size={16} />}
+                  >
+                    {showAdvancedFilters ? 'Hide' : 'Show'} Advanced
+                  </Button>
+                </div>
+              </div>
+
+              {showAdvancedFilters && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Sort By
+                    </label>
+                    <Select
+                      value={sortBy}
+                      onValueChange={(value) => setSortBy(value as any)}
+                      options={[
+                        { value: 'name', label: 'Name' },
+                        { value: 'status', label: 'Status' },
+                        { value: 'potential', label: 'Potential' },
+                        { value: 'timeSpent', label: 'Time Spent' },
+                        { value: 'tasks', label: 'Task Count' }
+                      ]}
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Sort Order
+                    </label>
+                    <Select
+                      value={sortOrder}
+                      onValueChange={(value) => setSortOrder(value as any)}
+                      options={[
+                        { value: 'asc', label: 'Ascending' },
+                        { value: 'desc', label: 'Descending' }
+                      ]}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Airdrops Grid/List */}
+        <Card variant="default" padding="md">
+          <CardHeader>
+            <h4 className="text-md font-semibold flex items-center gap-2">
+              <Target size={16} />
+              Airdrops ({filteredAirdrops.length})
+            </h4>
+          </CardHeader>
+          <CardContent>
+            {filteredAirdrops.length === 0 ? (
+              <div className="text-center py-8">
+                <Target size={48} className="mx-auto text-gray-400 dark:text-gray-500 mb-4" />
+                <h3 className="text-lg font-semibold mb-2">No airdrops found</h3>
+                <p className="text-gray-600 dark:text-gray-400 mb-4">
+                  {searchTerm || selectedBlockchain !== 'all' || selectedStatus !== 'all' || selectedPotential !== 'all'
+                    ? 'Try adjusting your search or filters.'
+                    : 'No airdrops in your portfolio yet.'}
+                </p>
+                {!searchTerm && selectedBlockchain === 'all' && selectedStatus === 'all' && selectedPotential === 'all' && (
+                  <Button
+                    variant="primary"
+                    onClick={() => navigate('/airdrops/new')}
+                    leftIcon={<Plus size={16} />}
+                  >
+                    Add Your First Airdrop
+                  </Button>
+                )}
+              </div>
+            ) : viewMode === 'grid' ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredAirdrops.map(airdrop => (
+                  <Card key={airdrop.id} variant="outlined" padding="md" className="hover:shadow-md transition-shadow">
+                    <CardContent>
+                      <div className="space-y-3">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1 min-w-0">
+                            <h5 className="font-medium truncate">{airdrop.projectName}</h5>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">{airdrop.blockchain}</p>
+                          </div>
+                          <div className="flex gap-1 flex-shrink-0">
+                            <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(airdrop.myStatus)}`}>
+                              {airdrop.myStatus}
+                            </span>
+                            <span className={`px-2 py-1 text-xs rounded-full ${getPotentialColor(airdrop.potential)}`}>
+                              {airdrop.potential}
+                            </span>
+                          </div>
+                        </div>
+                        
+                        {airdrop.description && (
+                          <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
+                            {airdrop.description}
+                          </p>
+                        )}
+                        
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-sm">
+                            <span>Tasks:</span>
+                            <span>{airdrop.tasks.filter(t => t.completed).length}/{airdrop.tasks.length}</span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span>Time Spent:</span>
+                            <span>{airdrop.timeSpentHours}h</span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span>Transactions:</span>
+                            <span>{airdrop.transactions.length}</span>
+                          </div>
+                          {airdrop.claimedTokens.length > 0 && (
+                            <div className="flex justify-between text-sm">
+                              <span>Claimed Tokens:</span>
+                              <span>{airdrop.claimedTokens.length}</span>
+                            </div>
+                          )}
+                        </div>
+                        
+                        <div className="flex gap-2">
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="flex-1"
+                            onClick={() => handleQuickAction('view', airdrop.id)}
+                          >
+                            View Details
+                          </Button>
+                          <div className="relative">
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => handleQuickAction('edit', airdrop.id)}
+                            >
+                              <Edit size={14} />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {filteredAirdrops.map(airdrop => (
+                  <div key={airdrop.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                    <div className="flex items-center gap-4 flex-1 min-w-0">
+                      <div className="flex-1 min-w-0">
+                        <h5 className="font-medium truncate">{airdrop.projectName}</h5>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">{airdrop.blockchain}</p>
+                        {airdrop.description && (
+                          <p className="text-sm text-gray-500 dark:text-gray-500 truncate">
+                            {airdrop.description}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex gap-1 flex-shrink-0">
+                        <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(airdrop.myStatus)}`}>
+                          {airdrop.myStatus}
+                        </span>
+                        <span className={`px-2 py-1 text-xs rounded-full ${getPotentialColor(airdrop.potential)}`}>
+                          {airdrop.potential}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-4 flex-shrink-0">
+                      <div className="text-right">
+                        <p className="text-sm">{airdrop.tasks.filter(t => t.completed).length}/{airdrop.tasks.length} tasks</p>
+                        <p className="text-xs text-gray-500">{airdrop.timeSpentHours}h spent</p>
+                      </div>
+                      <div className="flex gap-1">
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleQuickAction('view', airdrop.id)}
+                        >
+                          View
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleQuickAction('edit', airdrop.id)}
+                        >
+                          <Edit size={14} />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Additional Portfolio Sections */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Wallets Summary */}
+          <Card variant="default" padding="md">
+            <CardHeader>
+              <h4 className="text-md font-semibold flex items-center gap-2">
+                <WalletIcon size={16} />
+                Wallets ({portfolioMetrics.totalWallets})
+              </h4>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {validatedWallets.slice(0, 5).map(wallet => (
+                  <div key={wallet.id} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-800 rounded">
+                    <div>
+                      <p className="font-medium">{wallet.name}</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">{wallet.blockchain}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm">{wallet.address.slice(0, 8)}...{wallet.address.slice(-6)}</p>
+                      <p className="text-xs text-gray-500">{wallet.group || 'No group'}</p>
+                    </div>
+                  </div>
+                ))}
+                {validatedWallets.length > 5 && (
+                  <p className="text-sm text-gray-500 text-center">
+                    +{validatedWallets.length - 5} more wallets
+                  </p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Yield Positions Summary */}
+          <Card variant="default" padding="md">
+            <CardHeader>
+              <h4 className="text-md font-semibold flex items-center gap-2">
+                <TrendingUp size={16} />
+                Yield Positions ({portfolioMetrics.totalYieldPositions})
+              </h4>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {validatedYieldPositions.slice(0, 5).map(position => (
+                  <div key={position.id} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-800 rounded">
+                    <div>
+                      <p className="font-medium">{position.platformName}</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">{position.assetSymbol}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm">{position.currentApy || 0}% APY</p>
+                      <p className="text-xs text-gray-500">{position.platformName}</p>
+                    </div>
+                  </div>
+                ))}
+                {validatedYieldPositions.length > 5 && (
+                  <p className="text-sm text-gray-500 text-center">
+                    +{validatedYieldPositions.length - 5} more positions
+                  </p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </PageWrapper>
   );
 };

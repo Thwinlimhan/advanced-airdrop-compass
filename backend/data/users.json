@@ -1,0 +1,16 @@
+[
+  {
+    "id": "user_1750579025143_04c3f",
+    "email": "test@example.com",
+    "username": "testuser",
+    "password": "$2a$12$MItHF/W7bov22RMpJH73V.hL9LsulZrlxdZv6rDZGorrgVGaEnc3K",
+    "createdAt": "2025-06-22T07:57:05.143Z"
+  },
+  {
+    "id": "user_1750579073573_gppox",
+    "email": "thwinlinhanmarket@gmail.com",
+    "username": "Dongshufa",
+    "password": "$2a$12$CVfwjQaSJxqJuOqzKm7TfuBrvJGEHocGFDlxkz0HQO6OjrnhuPsym",
+    "createdAt": "2025-06-22T07:57:53.573Z"
+  }
+]

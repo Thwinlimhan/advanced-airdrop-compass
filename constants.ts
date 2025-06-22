@@ -1,5 +1,3 @@
-
-
 import { AppSettings, NavItem, Theme, AirdropStatus, GasPrice, LearningResource, SybilChecklistItem, BLOCKCHAIN_EXPLORERS_TYPE, RoadmapEvent, ConfidenceLevel, AirdropPriority, WidgetKey, TaskFrequency, AirdropCardLayoutSettings, AirdropNotificationSettings, UserBadge, DayOfWeek, AirdropProjectCategory, UserFarmingPreferences } from './types';
 import { LayoutDashboard, Droplets, ListChecks, GraduationCap, Settings, WalletCards, BarChart3, Eye, FileText, UserCircle, BookOpen, BookMarked, NotebookPen, Brain, Newspaper, Sparkles, DatabaseIcon, Briefcase, Award, Star, ShieldCheck, Lightbulb, Bot, Route as RouteIconLucide, TestTube2, Languages, Cog as AutomationIcon, Settings as PageCogIcon, PieChart, Activity, Share2, CalendarCheck, Lock, Coins, ImageUp as ImageIconLucide, Users, Percent, DollarSign as DollarSignIcon, AlertTriangle, CheckCircle as CheckCircleIcon, GitFork, Link2, MapPin, ShieldAlert, HelpCircle, Power as PowerIcon, ListPlus, Download as DownloadIcon, Timer as TimerIcon, Repeat as RepeatIcon, ArrowRightLeft, Bell as BellIcon, History as HistoryIcon, Play, LogIn, UserPlus } from 'lucide-react'; // Added Play, LogIn, UserPlus icons
 
@@ -38,6 +36,11 @@ export const DEFAULT_USER_FARMING_PREFERENCES: UserFarmingPreferences = {
   capital: '$100-$500',
   preferredChains: ['Ethereum', 'Solana'],
   timeCommitment: '5-10 hrs/wk',
+  automations: {
+    autoClaim: false,
+    autoCompound: false,
+  },
+  preferredStrategies: ['DEX Trading', 'Lending', 'Yield Farming'],
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -76,6 +79,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   currentStreak: 0,
   lastTaskCompletionDate: null,
   userPreferences: DEFAULT_USER_FARMING_PREFERENCES,
+  aiProvider: 'ollama',
+  aiApiKey: '',
+  aiModel: 'auto',
+  emailNotifications: false,
 };
 
 export const NAVIGATION_ITEMS: NavItem[] = [

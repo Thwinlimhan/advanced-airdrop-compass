@@ -1,6 +1,5 @@
-
 import { useState, useEffect, useCallback } from 'react';
-import { useAppContext } from '../contexts/AppContext';
+import { useSettingsStore } from '../stores/settingsStore';
 
 export interface TranslationHook {
   t: (key: string, options?: { defaultValue?: string; [key: string]: any }) => string;
@@ -93,8 +92,8 @@ const embeddedEnTranslations: Record<string, string> = {
 translationsCache['en'] = embeddedEnTranslations; // Pre-fill cache with embedded English
 
 export const useTranslation = (): TranslationHook => {
-  const { appData, updateSettings } = useAppContext();
-  const currentLanguageSetting = appData.settings.language || 'en';
+  const { settings, updateSettings } = useSettingsStore();
+  const currentLanguageSetting = settings.language || 'en';
   const [currentLang, setCurrentLang] = useState<string>(currentLanguageSetting);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 

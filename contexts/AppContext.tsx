@@ -357,6 +357,53 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
     });
 
+    // Migrate AirdropTask objects to include webLink field
+    if (dataToUpdate.airdrops && dataToUpdate.airdrops.length > 0) {
+        const migrateTasksRecursive = (tasks: AirdropTask[]): AirdropTask[] => {
+            return tasks.map(task => {
+                let taskNeedsUpdate = false;
+                const migratedTask = { 
+                    ...task,
+                    subTasks: task.subTasks || [],
+                    cost: task.cost || undefined,
+                    linkedGasLogId: task.linkedGasLogId || undefined,
+                    completionDate: task.completionDate || undefined,
+                    dependsOnTaskIds: task.dependsOnTaskIds || [], 
+                    dependsOnAirdropMyStatusCompleted: task.dependsOnAirdropMyStatusCompleted || undefined,
+                    webLink: task.webLink || undefined, // ADDED
+                };
+                
+                // Check if any field was added
+                if (task.webLink === undefined) {
+                    taskNeedsUpdate = true;
+                }
+                
+                // Migrate sub-tasks recursively
+                if (migratedTask.subTasks && migratedTask.subTasks.length > 0) {
+                    const migratedSubTasks = migrateTasksRecursive(migratedTask.subTasks);
+                    if (migratedSubTasks.some(st => st !== migratedTask.subTasks!.find(original => original.id === st.id))) {
+                        migratedTask.subTasks = migratedSubTasks;
+                        taskNeedsUpdate = true;
+                    }
+                }
+                
+                if (taskNeedsUpdate) {
+                    needsMigrationUpdate = true;
+                }
+                
+                return migratedTask;
+            });
+        };
+
+        dataToUpdate.airdrops = dataToUpdate.airdrops.map((airdrop: Airdrop) => {
+            const migratedTasks = migrateTasksRecursive(airdrop.tasks);
+            if (migratedTasks.some(t => t !== airdrop.tasks.find((original: AirdropTask) => original.id === t.id))) {
+                return { ...airdrop, tasks: migratedTasks };
+            }
+            return airdrop;
+        });
+    }
+
     if (needsMigrationUpdate) {
         setAndPersistAppData(dataToUpdate); 
     }
@@ -519,7 +566,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (oldAirdrop && (oldAirdrop.status !== savedAirdrop.status || oldAirdrop.myStatus !== savedAirdrop.myStatus)) {
           const notifySettings = savedAirdrop.notificationOverrides ?? appData.settings.defaultAirdropNotificationSettings;
           if(notifySettings.statusChange) {
-              addUserAlert({ type: NotificationType.STATUS_CHANGE, title: `Status Update: ${savedAirdrop.projectName}`, body: `Official status: ${savedAirdrop.status}, My status: ${savedAirdrop.myStatus}`, relatedAirdropId: savedAirdrop.id });
+              addUserAlert({ 
+                type: NotificationType.STATUS_CHANGE, 
+                title: `Status Update: ${savedAirdrop.projectName}`, 
+                body: `Official status: ${savedAirdrop.status}, My status: ${savedAirdrop.myStatus}`, 
+                relatedAirdropId: savedAirdrop.id 
+              } as Omit<UserAlert, 'id' | 'date' | 'isRead'>);
           }
       }
     } catch (e) { addToast(`Error updating airdrop: ${(e as Error).message}`, "error"); }
@@ -1142,6 +1194,58 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     addToast("Badge check re-evaluation (client-side).", "info");
   }, [setAndPersistAppData, addToast]);
 
+  const runAiSentinelCheck = useCallback(async () => {
+    addToast("AI Sentinel check feature not yet implemented.", "info");
+  }, [addToast]);
+
+  const runAiTaskValidation = useCallback(async (airdropId: string) => {
+    addToast("AI Task validation feature not yet implemented.", "info");
+  }, [addToast]);
+
+  const scrapeAirdropDataFromURL = useCallback(async (url: string): Promise<Partial<Airdrop> | null> => {
+    if (!token) {
+        addToast("Not authenticated for AI scraping.", "error");
+        return null;
+    }
+
+    // Try to extract a project name from the URL to help the AI
+    let projectNameFromUrl = 'An Unnamed Project';
+    try {
+        const pathSegments = new URL(url).pathname.split('/');
+        // Find the most likely project name from segments like /airdrop/some-project-name
+        const projectSegment = pathSegments.find(seg => seg && seg.length > 3 && !['airdrop', 'project'].includes(seg));
+        if (projectSegment) {
+            projectNameFromUrl = projectSegment.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        }
+    } catch(e) {
+      console.warn("Could not parse project name from URL, using default.");
+    }
+    
+    try {
+        // For now, return mock data based on the URL
+        // In a real implementation, this would call an AI service
+        const mockPrefillData: Partial<Airdrop> = {
+            projectName: projectNameFromUrl,
+            description: `This is a mock project generated from the provided URL: ${url}. In a real implementation, this would be AI-generated based on the actual content of the page.`,
+            blockchain: 'Ethereum',
+            status: AirdropStatus.RUMORED,
+            priority: AirdropPriority.MEDIUM,
+            officialLinks: {
+                website: url,
+                twitter: '',
+                discord: ''
+            },
+            projectCategory: 'DEX',
+            potential: 'Medium'
+        };
+        
+        return mockPrefillData;
+    } catch(e) {
+        console.error("AI Scrape Error: ", e);
+        const errorMessage = e instanceof Error ? e.message : "An unknown error occurred during AI processing.";
+        throw new Error(errorMessage);
+    }
+  }, [addToast, token]);
 
   const contextValue: AppContextType = {
     appData, setAppData: setAndPersistAppData, isAuthenticated, currentUser, token, isLoadingAuth, isDataLoading, // Added isDataLoading
@@ -1173,7 +1277,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     getPortfolioSummaryForAI,
     exportAirdropsToCSV, exportWalletsToCSV, exportRecurringTasksToCSV, exportSoldTokenLogsToCSV,
     internalFetchWalletsFromApi, internalFetchAirdropsFromApi, internalFetchRecurringTasksFromApi,
-    isSidebarOpen, toggleSidebar
+    isSidebarOpen, toggleSidebar,
+    runAiSentinelCheck,
+    runAiTaskValidation,
+    scrapeAirdropDataFromURL
   };
 
   if (isLoadingAuth && !token) { 

@@ -1,253 +1,520 @@
-import React, { useState, FormEvent, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PageWrapper } from '../../components/layout/PageWrapper';
-import { Card } from '../../design-system/components/Card';
-import { Input } from '../../design-system/components/Input';
+import { Card, CardHeader, CardContent } from '../../design-system/components/Card';
 import { Button } from '../../design-system/components/Button';
-import { AlertMessage } from '../../components/ui/AlertMessage';
-import { Bot, Send, Loader2, User, Download, AlertTriangle } from 'lucide-react'; // Added User, Download, AlertTriangle
+import { Input } from '../../design-system/components/Input';
+import { Textarea } from '../../design-system/components/Textarea';
+import { Select } from '../../design-system/components/Select';
+import { useAirdropStore } from '../../stores/airdropStore';
+import { useWalletStore } from '../../stores/walletStore';
+import { useYieldPositionStore } from '../../stores/yieldPositionStore';
+import { useSettingsStore } from '../../stores/settingsStore';
+import { Airdrop, Wallet, YieldPosition } from '../../types';
+import { 
+  Brain, 
+  TrendingUp, 
+  BarChart3, 
+  DollarSign, 
+  Users, 
+  Target,
+  Search,
+  Filter,
+  RefreshCw,
+  Lightbulb,
+  AlertTriangle,
+  CheckCircle,
+  Clock,
+  Tag,
+  Calendar,
+  Send,
+  Loader2,
+  Settings,
+  AlertCircle,
+  Info
+} from 'lucide-react';
+import { useToast } from '../../hooks/useToast';
 import { useTranslation } from '../../hooks/useTranslation';
-import { useAppContext } from '../../contexts/AppContext'; // Corrected import
-import { GoogleGenAI, GenerateContentResponse } from "@google/genai"; // Added
-import { Airdrop, Wallet, AirdropTask } from '../../types'; // Added
-
-interface Message {
-  id: string;
-  type: 'user' | 'ai' | 'error' | 'loading';
-  content: React.ReactNode;
-  textForExport: string;
-}
+import { aiService, isAIServiceAvailable, testOllamaConnection } from '../../utils/aiService';
+import { useNavigate } from 'react-router-dom';
 
 export const AIAnalystPage: React.FC = () => {
+  const { airdrops } = useAirdropStore();
+  const { wallets } = useWalletStore();
+  const { yieldPositions } = useYieldPositionStore();
+  const { settings } = useSettingsStore();
+  const { addToast } = useToast();
   const { t } = useTranslation();
-  const { appData } = useAppContext(); // Added
+  const navigate = useNavigate();
+
   const [query, setQuery] = useState('');
-  const [conversation, setConversation] = useState<Message[]>([]);
+  const [analysis, setAnalysis] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const conversationEndRef = useRef<null | HTMLDivElement>(null);
-  const [isApiKeyMissing, setIsApiKeyMissing] = useState(false);
+  const [isCheckingAvailability, setIsCheckingAvailability] = useState(true);
+  const [aiAvailable, setAiAvailable] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [selectedAirdrop, setSelectedAirdrop] = useState<string>('');
+  const [selectedWallet, setSelectedWallet] = useState<string>('');
+  const [analysisType, setAnalysisType] = useState<'portfolio' | 'airdrop' | 'wallet' | 'general'>('portfolio');
 
+  // Check AI service availability on component mount
   useEffect(() => {
-    if (!process.env.API_KEY) {
-      setIsApiKeyMissing(true);
-      setError("API_KEY for AI features is not configured. AI Analyst is unavailable.");
-    }
-  }, []);
+    checkAIAvailability();
+  }, [settings.aiProvider, settings.aiApiKey]);
 
-  const scrollToBottom = () => {
-    conversationEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  useEffect(scrollToBottom, [conversation]);
-
-  const handleSubmitQuery = async (e: FormEvent) => {
-    e.preventDefault();
-    if (isApiKeyMissing) {
-      setError("API_KEY for AI features is not configured. AI Analyst is unavailable.");
-      return;
-    }
-    if (!query.trim()) return;
-
-    const userMessage: Message = {
-      id: crypto.randomUUID(),
-      type: 'user',
-      content: <div className="flex items-start gap-2"><User size={18} className="text-indigo-300 flex-shrink-0 mt-0.5"/><span>{query}</span></div>,
-      textForExport: `User: ${query}`
-    };
-    const loadingMessage: Message = {
-      id: crypto.randomUUID(),
-      type: 'loading',
-      content: <div className="flex items-center"><Loader2 size={16} className="animate-spin mr-2" /><span>AI is analyzing your query...</span></div>,
-      textForExport: "AI is analyzing..."
-    };
-    setConversation(prev => [...prev, userMessage, loadingMessage]);
-    setIsLoading(true);
-    setError(null);
-    const currentQuery = query;
-    setQuery('');
-
+  const checkAIAvailability = async () => {
+    setIsCheckingAvailability(true);
+    setAiError(null);
+    
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
-      let systemInstruction = "You are a helpful AI assistant knowledgeable about cryptocurrency and airdrops. Answer the user's question concisely. If you are provided with user data context, prioritize answering based on that. If not, or if the question is general, answer based on your general knowledge. Do not make up information if it's not in the provided context or your general knowledge.";
-      let promptForAI = currentQuery;
-      
-      // Simple intent detection for queries related to user's data
-      const portfolioKeywords = ["my airdrops", "my wallets", "my tasks", "portfolio summary", "total cost", "time spent", "active airdrops", "archived airdrops"];
-      const isPortfolioQuery = portfolioKeywords.some(keyword => currentQuery.toLowerCase().includes(keyword));
+      if (!settings.aiProvider) {
+        setAiError('No AI provider configured. Please configure AI settings.');
+        setAiAvailable(false);
+        return;
+      }
 
-      if (isPortfolioQuery) {
-        systemInstruction = "You are an AI Data Analyst for a crypto airdrop tracking application. The user is asking about their portfolio data. You will be provided with a JSON summary of their relevant application data. Analyze this data to answer the user's question. If the data doesn't directly answer, explain what you can infer or what data might be missing. Be factual and concise. Do not make up data.";
-        
-        // Construct a summarized context (keep it brief to manage token limits)
-        const airdropSummary = appData.airdrops.map(ad => ({
-            name: ad.projectName, 
-            status: ad.myStatus, 
-            blockchain: ad.blockchain,
-            tasksCount: ad.tasks.length,
-            tasksCompleted: ad.tasks.filter(t => t.completed).length,
-            potential: ad.potential
-        })).slice(0, 10); // Limit for brevity
+      if (settings.aiProvider === 'gemini' && !settings.aiApiKey) {
+        setAiError('Gemini API key not configured. Please add your API key in settings.');
+        setAiAvailable(false);
+        return;
+      }
 
-        const walletSummary = appData.wallets.map(w => ({
-            name: w.name,
-            blockchain: w.blockchain,
-            // Add more relevant wallet fields if needed, e.g., number of interactions logged
-        })).slice(0, 5);
-
-        const taskSummary = {
-            totalRecurring: appData.recurringTasks.length,
-            activeRecurring: appData.recurringTasks.filter(t => t.isActive).length,
-        };
-        
-        const dataContext = {
-            airdrops: airdropSummary,
-            wallets: walletSummary,
-            recurringTasks: taskSummary,
-            // Potentially add high-level P&L summary if easily calculable & relevant
-        };
-        promptForAI = `User Query: "${currentQuery}"\n\nUser's Application Data Summary (use this to answer):\n${JSON.stringify(dataContext, null, 2)}`;
-      } else {
-        // Fallback for general crypto questions or specific airdrop info (as before)
-        const airdropQueryMatch = currentQuery.toLowerCase().match(/(?:tell me about|summarize|details for|status of|tasks for)\s+(.+)/i);
-        let targetAirdropName = airdropQueryMatch?.[1]?.trim();
-        if (!targetAirdropName) {
-            const queryParts = currentQuery.toLowerCase().split(" ");
-            const potentialNameIndex = queryParts.findIndex(part => appData.airdrops.some(ad => ad.projectName.toLowerCase().includes(part)))
-            if (potentialNameIndex !== -1) {
-                let possibleName = queryParts.slice(potentialNameIndex).join(" "); 
-                const matchedAirdrop = appData.airdrops.find(ad => ad.projectName.toLowerCase().includes(possibleName.toLowerCase()));
-                if (matchedAirdrop) targetAirdropName = matchedAirdrop.projectName;
-            }
-        }
-
-        let foundAirdrop: Airdrop | undefined = undefined;
-        if (targetAirdropName) {
-            foundAirdrop = appData.airdrops.find(ad => ad.projectName.toLowerCase() === targetAirdropName!.toLowerCase());
-        }
-
-        if (foundAirdrop) {
-            systemInstruction = "You are an AI assistant. Summarize the provided airdrop data for the user. Focus on key details like status, tasks completed, and any notes. Be concise and helpful.";
-            const taskSummary = `${foundAirdrop.tasks.filter(t => t.completed).length}/${foundAirdrop.tasks.length} tasks completed.`;
-            promptForAI = `Please summarize the following information for the "${foundAirdrop.projectName}" airdrop:
-            - Current Official Status: ${foundAirdrop.status}
-            - My Participation Status: ${foundAirdrop.myStatus}
-            - Description: ${foundAirdrop.description || "Not provided."}
-            - Task Summary: ${taskSummary}
-            - My Notes: ${foundAirdrop.notes || "No personal notes."}
-            
-            Respond directly to the user based on this data.`;
-        } else if (targetAirdropName) { 
-            promptForAI = `The user asked about an airdrop named "${targetAirdropName}", but I couldn't find it in their tracked data. Please inform them and offer to answer general questions about it if it's a known public project. Original query was: "${currentQuery}"`;
+      if (settings.aiProvider === 'ollama') {
+        const testResult = await testOllamaConnection();
+        if (!testResult.success) {
+          setAiError(`Ollama not available: ${testResult.error || 'Please ensure Ollama is running locally.'}`);
+          setAiAvailable(false);
+          return;
         }
       }
+
+      const available = await isAIServiceAvailable();
+      setAiAvailable(available);
       
-      const response: GenerateContentResponse = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-preview-04-17',
-        contents: promptForAI,
-        config: { systemInstruction }
+      if (!available) {
+        setAiError('AI service is not available. Please check your configuration.');
+      }
+    } catch (error) {
+      setAiError(`Failed to check AI availability: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setAiAvailable(false);
+    } finally {
+      setIsCheckingAvailability(false);
+    }
+  };
+
+  const handleAnalyze = async () => {
+    if (!query.trim()) {
+      addToast('Please enter a query for analysis.', 'warning');
+      return;
+    }
+
+    if (!aiAvailable) {
+      addToast('AI service is not available. Please check your configuration.', 'error');
+      return;
+    }
+
+    setIsLoading(true);
+    setAnalysis('');
+    
+    try {
+      let context = '';
+      
+      switch (analysisType) {
+        case 'portfolio':
+          context = getPortfolioContext();
+          break;
+        case 'airdrop':
+          if (selectedAirdrop) {
+            const airdrop = airdrops.find(a => a.id === selectedAirdrop);
+            context = airdrop ? getAirdropContext(airdrop) : '';
+          }
+          break;
+        case 'wallet':
+          if (selectedWallet) {
+            const wallet = wallets.find(w => w.id === selectedWallet);
+            context = wallet ? getWalletContext(wallet) : '';
+          }
+          break;
+        case 'general':
+          context = getGeneralContext();
+          break;
+      }
+
+      const response = await aiService.analyze({
+        query,
+        context,
+        type: 'portfolio_analysis'
       });
 
-      const aiResponseText = response.text;
-      const aiMessage: Message = {
-        id: crypto.randomUUID(),
-        type: 'ai',
-        content: <div className="flex items-start gap-2"><Bot size={18} className="text-purple-400 flex-shrink-0 mt-0.5"/><span>{aiResponseText}</span></div>,
-        textForExport: `AI: ${aiResponseText}`
-      };
-      setConversation(prev => prev.filter(m => m.type !== 'loading').concat(aiMessage));
-
-    } catch (err) {
-      console.error("AI Analyst Error:", err);
-      const errorMessageText = err instanceof Error ? err.message : "An unknown error occurred while contacting the AI.";
-      const errorMessage: Message = {
-        id: crypto.randomUUID(),
-        type: 'error',
-        content: <div className="flex items-start gap-2"><AlertTriangle size={18} className="text-red-400 flex-shrink-0 mt-0.5"/><span>Error: {errorMessageText}</span></div>,
-        textForExport: `Error: ${errorMessageText}`
-      };
-      setConversation(prev => prev.filter(m => m.type !== 'loading').concat(errorMessage));
-      setError(errorMessageText); 
+      setAnalysis(response);
+      addToast('Analysis completed successfully.', 'success');
+    } catch (error) {
+      console.error('AI Analysis error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      addToast(`Analysis failed: ${errorMessage}`, 'error');
+      setAnalysis(`❌ Analysis failed: ${errorMessage}\n\nPlease check your AI configuration or try again later.`);
     } finally {
       setIsLoading(false);
     }
   };
-  
-  const handleExportConversation = () => {
-    if (conversation.length === 0) return;
-    const plainTextConversation = conversation.map(msg => msg.textForExport).join('\n\n');
-    const blob = new Blob([plainTextConversation], { type: 'text/plain;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `ai_analyst_conversation_${new Date().toISOString().split('T')[0]}.txt`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+
+  const handleQuickQuery = (quickQuery: string) => {
+    setQuery(quickQuery);
   };
 
+  const navigateToSettings = () => {
+    navigate('/settings');
+  };
+
+  const getPortfolioContext = (): string => {
+    const totalAirdrops = airdrops.length;
+    const activeAirdrops = airdrops.filter(a => a.myStatus === 'In Progress').length;
+    const completedAirdrops = airdrops.filter(a => a.myStatus === 'Completed').length;
+    const totalWallets = wallets.length;
+    const totalYieldPositions = yieldPositions.length;
+    
+    const airdropSummary = airdrops.map(a => 
+      `${a.projectName} (${a.blockchain}) - Status: ${a.myStatus}, Potential: ${a.potential}`
+    ).join('\n');
+
+    const walletSummary = wallets.map(w => 
+      `${w.name} (${w.blockchain}) - ${w.address}`
+    ).join('\n');
+
+    const yieldSummary = yieldPositions.map(y => 
+      `${y.platformName} - ${y.assetSymbol} - APY: ${y.currentApy || 0}%`
+    ).join('\n');
+
+    return `
+Portfolio Summary:
+- Total Airdrops: ${totalAirdrops} (${activeAirdrops} active, ${completedAirdrops} completed)
+- Total Wallets: ${totalWallets}
+- Total Yield Positions: ${totalYieldPositions}
+
+Airdrops:
+${airdropSummary}
+
+Wallets:
+${walletSummary}
+
+Yield Positions:
+${yieldSummary}
+    `;
+  };
+
+  const getAirdropContext = (airdrop: Airdrop): string => {
+    const completedTasks = airdrop.tasks.filter(t => t.completed).length;
+    const totalTasks = airdrop.tasks.length;
+    const timeSpent = airdrop.timeSpentHours || 0;
+    const transactions = airdrop.transactions.length;
+    const claimedTokens = airdrop.claimedTokens.length;
+
+    return `
+Airdrop Details:
+- Project: ${airdrop.projectName}
+- Blockchain: ${airdrop.blockchain}
+- Status: ${airdrop.status}
+- My Status: ${airdrop.myStatus}
+- Potential: ${airdrop.potential}
+- Progress: ${completedTasks}/${totalTasks} tasks completed
+- Time Spent: ${timeSpent} hours
+- Transactions: ${transactions}
+- Claimed Tokens: ${claimedTokens}
+
+Tasks:
+${airdrop.tasks.map(t => `- ${t.description} (${t.completed ? 'Completed' : 'Pending'})`).join('\n')}
+
+Notes: ${airdrop.notes || 'No notes'}
+    `;
+  };
+
+  const getWalletContext = (wallet: Wallet): string => {
+    const balanceSnapshots = wallet.balanceSnapshots?.length || 0;
+    const gasLogs = wallet.gasLogs?.length || 0;
+    const interactionLogs = wallet.interactionLogs?.length || 0;
+    const nftPortfolio = wallet.nftPortfolio?.length || 0;
+
+    return `
+Wallet Details:
+- Name: ${wallet.name}
+- Address: ${wallet.address}
+- Blockchain: ${wallet.blockchain}
+- Group: ${wallet.group || 'None'}
+- Balance Snapshots: ${balanceSnapshots}
+- Gas Logs: ${gasLogs}
+- Interaction Logs: ${interactionLogs}
+- NFT Portfolio: ${nftPortfolio}
+
+Recent Gas Logs:
+${wallet.gasLogs?.slice(-5).map(g => `- ${g.date}: ${g.amount} ${g.currency} (${g.description || 'Gas'})`).join('\n') || 'No gas logs'}
+
+Recent Interactions:
+${wallet.interactionLogs?.slice(-5).map(i => `- ${i.date}: ${i.type} - ${i.description}`).join('\n') || 'No interactions'}
+    `;
+  };
+
+  const getGeneralContext = (): string => {
+    return `
+General Portfolio Context:
+- Total Airdrops: ${airdrops.length}
+- Total Wallets: ${wallets.length}
+- Total Yield Positions: ${yieldPositions.length}
+- User Preferences: ${JSON.stringify(settings.userPreferences || {})}
+    `;
+  };
+
+  const quickQueries = [
+    'What are my most promising airdrops?',
+    'How can I optimize my yield farming strategy?',
+    'Which wallets need attention?',
+    'What are the best practices for avoiding sybil detection?',
+    'How can I improve my airdrop farming efficiency?',
+    'What are the risks in my current portfolio?'
+  ];
 
   return (
     <PageWrapper>
-      <div className="flex items-center mb-6">
-        <Bot size={28} className="mr-3 text-primary-light dark:text-primary-dark" />
-        <h2 className="text-2xl font-semibold text-text-light dark:text-text-dark">
-          {t('ai_analyst_title')}
-        </h2>
-      </div>
-      <Card className="mb-6">
-        <p className="text-sm text-muted-light dark:text-muted-dark mb-4">
-          Ask about your tracked airdrops (e.g., "Summarize LayerZero", "What are my most time-consuming airdrops?") or general crypto questions.
-        </p>
-        {isApiKeyMissing && !error && ( 
-             <AlertMessage type="warning" title="API Key Missing" message="AI Analyst requires an API_KEY. This feature is currently disabled." className="mb-4" />
-        )}
-        {error && ( 
-             <AlertMessage type="error" title="Analyst Error" message={error} className="mb-4" onDismiss={()=>setError(null)} />
-        )}
-        <form onSubmit={handleSubmitQuery} className="flex gap-2">
-          <Input
-            id="ai-analyst-query"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t('ai_analyst_input_placeholder')}
-            disabled={isLoading || isApiKeyMissing}
-          />
-          <Button type="submit" disabled={isLoading || !query.trim() || isApiKeyMissing} leftIcon={isLoading ? <Loader2 className="animate-spin"/> : <Send />}>
-            {isLoading ? "Thinking..." : t('ai_analyst_submit_button')}
-          </Button>
-        </form>
-      </Card>
-
-      <Card className="min-h-[300px] flex flex-col">
-        <div className="flex justify-between items-center mb-3">
-            <h3 className="text-lg font-semibold text-text-light dark:text-text-dark">Conversation</h3>
-            {conversation.length > 0 && (
-                <Button variant="outline" size="sm" onClick={handleExportConversation} leftIcon={<Download size={14}/>}>
-                    {t('ai_analyst_export_conversation_button')}
+      <div className="p-6 space-y-6">
+        {/* Header */}
+        <Card variant="elevated" padding="lg">
+          <CardHeader>
+            <h3 className="text-lg font-semibold flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Brain size={24} className="text-accent" />
+                AI Portfolio Analyst
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={checkAIAvailability}
+                  leftIcon={isCheckingAvailability ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+                  disabled={isCheckingAvailability}
+                >
+                  {isCheckingAvailability ? 'Checking...' : 'Refresh'}
                 </Button>
-            )}
-        </div>
-        <div className="flex-grow space-y-3 overflow-y-auto max-h-[60vh] p-1 pr-2">
-          {conversation.length === 0 && !isLoading && (
-            <p className="text-center text-muted-light dark:text-muted-dark py-10">Ask a question to start the conversation.</p>
-          )}
-          {conversation.map((msg) => (
-            <div key={msg.id} className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[85%] p-2.5 rounded-xl shadow-sm ${
-                msg.type === 'user' ? 'bg-indigo-500 text-white rounded-br-none' :
-                msg.type === 'ai' ? 'bg-gray-100 dark:bg-gray-700 text-text-light dark:text-text-dark rounded-bl-none' :
-                msg.type === 'loading' ? 'bg-gray-200 dark:bg-gray-600 text-muted-light dark:text-muted-dark italic rounded-bl-none' :
-                'bg-red-100 dark:bg-red-800 text-red-700 dark:text-red-200 rounded-bl-none' // error
-              }`}>
-                <div className="text-sm whitespace-pre-wrap">{msg.content}</div>
+              </div>
+            </h3>
+          </CardHeader>
+          <CardContent>
+            <p className="text-secondary">
+              Get AI-powered insights about your crypto portfolio, airdrops, and farming strategies.
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* AI Status */}
+        {!isCheckingAvailability && (
+          <Card variant={aiAvailable ? "default" : "outlined"} padding="md" className={aiAvailable ? "" : "border-red-200 dark:border-red-800"}>
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {aiAvailable ? (
+                    <>
+                      <CheckCircle size={20} className="text-green-600" />
+                      <span className="font-medium text-green-700 dark:text-green-300">
+                        AI Service Available ({settings.aiProvider || 'Not configured'})
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <AlertCircle size={20} className="text-red-600" />
+                      <span className="font-medium text-red-700 dark:text-red-300">
+                        AI Service Unavailable
+                      </span>
+                    </>
+                  )}
+                </div>
+                {!aiAvailable && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={navigateToSettings}
+                    leftIcon={<Settings size={16} />}
+                  >
+                    Configure AI
+                  </Button>
+                )}
+              </div>
+              {aiError && (
+                <div className="mt-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
+                  <div className="flex items-start gap-2">
+                    <Info size={16} className="text-red-600 mt-0.5 flex-shrink-0" />
+                    <div className="text-sm text-red-700 dark:text-red-300">
+                      {aiError}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Analysis Controls */}
+        <Card variant="default" padding="md">
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+              <Select
+                value={analysisType}
+                onValueChange={(value) => setAnalysisType(value as 'portfolio' | 'airdrop' | 'wallet' | 'general')}
+                options={[
+                  { value: 'portfolio', label: 'Portfolio Analysis' },
+                  { value: 'airdrop', label: 'Airdrop Analysis' },
+                  { value: 'wallet', label: 'Wallet Analysis' },
+                  { value: 'general', label: 'General Advice' }
+                ]}
+              />
+              
+              {analysisType === 'airdrop' && (
+                <Select
+                  value={selectedAirdrop}
+                  onValueChange={(value) => setSelectedAirdrop(value as string)}
+                  options={[
+                    { value: '', label: 'Select Airdrop' },
+                    ...airdrops.map(a => ({ value: a.id, label: a.projectName }))
+                  ]}
+                />
+              )}
+              
+              {analysisType === 'wallet' && (
+                <Select
+                  value={selectedWallet}
+                  onValueChange={(value) => setSelectedWallet(value as string)}
+                  options={[
+                    { value: '', label: 'Select Wallet' },
+                    ...wallets.map(w => ({ value: w.id, label: w.name }))
+                  ]}
+                />
+              )}
+            </div>
+
+            <div className="space-y-4">
+              <Textarea
+                placeholder="Ask me anything about your portfolio, airdrops, or farming strategies..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                rows={3}
+                disabled={isLoading || !aiAvailable}
+              />
+              
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={handleAnalyze}
+                  disabled={isLoading || !query.trim() || !aiAvailable}
+                  leftIcon={isLoading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                >
+                  {isLoading ? 'Analyzing...' : 'Analyze'}
+                </Button>
+                
+                <Button
+                  variant="outline"
+                  onClick={() => setQuery('')}
+                  disabled={isLoading}
+                >
+                  Clear
+                </Button>
               </div>
             </div>
-          ))}
-           <div ref={conversationEndRef} />
+          </CardContent>
+        </Card>
+
+        {/* Quick Queries */}
+        <Card variant="default" padding="md">
+          <CardHeader>
+            <h4 className="text-md font-semibold flex items-center gap-2">
+              <Lightbulb size={16} />
+              Quick Queries
+            </h4>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {quickQueries.map((quickQuery, index) => (
+                <Button
+                  key={index}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleQuickQuery(quickQuery)}
+                  disabled={isLoading || !aiAvailable}
+                  className="justify-start text-left h-auto p-3"
+                >
+                  {quickQuery}
+                </Button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Analysis Results */}
+        {analysis && (
+          <Card variant="default" padding="md">
+            <CardHeader>
+              <h4 className="text-md font-semibold flex items-center gap-2">
+                <Brain size={16} />
+                AI Analysis Results
+              </h4>
+            </CardHeader>
+            <CardContent>
+              <div className="prose prose-sm max-w-none dark:prose-invert">
+                <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                  {analysis}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Portfolio Summary */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <Card variant="default" padding="md">
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Total Airdrops</p>
+                  <p className="text-2xl font-bold">{airdrops.length}</p>
+                </div>
+                <Target size={24} className="text-blue-500" />
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card variant="default" padding="md">
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Active Airdrops</p>
+                  <p className="text-2xl font-bold">
+                    {airdrops.filter(a => a.myStatus === 'In Progress').length}
+                  </p>
+                </div>
+                <TrendingUp size={24} className="text-green-500" />
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card variant="default" padding="md">
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Total Wallets</p>
+                  <p className="text-2xl font-bold">{wallets.length}</p>
+                </div>
+                <Users size={24} className="text-purple-500" />
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card variant="default" padding="md">
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Yield Positions</p>
+                  <p className="text-2xl font-bold">{yieldPositions.length}</p>
+                </div>
+                <DollarSign size={24} className="text-yellow-500" />
+              </div>
+            </CardContent>
+          </Card>
         </div>
-      </Card>
-       <p className="text-xs text-muted-light dark:text-muted-dark mt-4 text-center">
-          AI Analyst provides information based on provided context or general knowledge. It does not have live access to external data or perform real-time blockchain analysis.
-        </p>
+      </div>
     </PageWrapper>
   );
 };

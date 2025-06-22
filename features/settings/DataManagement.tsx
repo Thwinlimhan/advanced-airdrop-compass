@@ -1,13 +1,27 @@
 import React, { useRef } from 'react';
 import { Card } from '../../design-system/components/Card';
 import { Button } from '../../design-system/components/Button';
-import { useAppContext } from '../../contexts/AppContext';
+import { useWalletStore } from '../../stores/walletStore';
+import { useAirdropStore } from '../../stores/airdropStore';
+import { useRecurringTaskStore } from '../../stores/recurringTaskStore';
+import { useLearningStore } from '../../stores/learningStore';
+import { useSettingsStore } from '../../stores/settingsStore';
+import { useWatchlistStore } from '../../stores/watchlistStore';
+import { useYieldPositionStore } from '../../stores/yieldPositionStore';
+import { useAiStrategyStore } from '../../stores/aiStrategyStore';
 import { AppData, RecurringTask, Wallet, Airdrop, ClaimedTokenLog, StrategyNote, AirdropTask } from '../../types'; 
 import { Download, Upload, AlertTriangle, WalletCards, Droplets, ListChecks, FileSpreadsheet, NotebookText } from 'lucide-react'; 
 import { useToast } from '../../hooks/useToast';
 
 export const DataManagement: React.FC = () => {
-  const { appData, setAppData, exportAirdropsToCSV, exportWalletsToCSV, exportRecurringTasksToCSV, exportSoldTokenLogsToCSV } = useAppContext(); // Added CSV export functions
+  const { wallets, setWallets } = useWalletStore();
+  const { airdrops, setAirdrops } = useAirdropStore();
+  const { recurringTasks, setRecurringTasks } = useRecurringTaskStore();
+  const { strategyNotes, setStrategyNotes } = useLearningStore();
+  const { settings } = useSettingsStore();
+  const { watchlist, setWatchlist } = useWatchlistStore();
+  const { yieldPositions, setYieldPositions } = useYieldPositionStore();
+  const { savedAiStrategies, setSavedAiStrategies } = useAiStrategyStore();
   const { addToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const walletsFileInputRef = useRef<HTMLInputElement>(null); 
@@ -15,6 +29,80 @@ export const DataManagement: React.FC = () => {
   const recurringTasksFileInputRef = useRef<HTMLInputElement>(null); 
   const strategyNotesFileInputRef = useRef<HTMLInputElement>(null);
 
+  // Create appData object from stores for export
+  const appData: AppData = {
+    wallets,
+    airdrops,
+    recurringTasks,
+    learningResources: [],
+    strategyNotes,
+    userAlerts: [],
+    settings,
+    watchlist,
+    airdropTemplates: [],
+    yieldPositions,
+    userBadges: [],
+    savedAiStrategies,
+  };
+
+  const setAppData = (newData: AppData) => {
+    setWallets(newData.wallets || []);
+    setAirdrops(newData.airdrops || []);
+    setRecurringTasks(newData.recurringTasks || []);
+    setStrategyNotes(newData.strategyNotes || []);
+    setWatchlist(newData.watchlist || []);
+    setYieldPositions(newData.yieldPositions || []);
+    setSavedAiStrategies(newData.savedAiStrategies || []);
+  };
+
+  // CSV export functions
+  const exportToCSV = (data: any[], headers: string[], fileName: string) => {
+    const csvRows = [ headers.join(','), ...data.map(row => headers.map(header => escapeCsvCell(row[header.toLowerCase().replace(/\s+/g, '')] ?? row[header] ?? '')).join(',')) ];
+    const csvString = csvRows.join('\n'); const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.setAttribute('download', fileName);
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+  };
+
+  const escapeCsvCell = (cell: any): string => {
+    if (cell === null || cell === undefined) return '';
+    const stringCell = String(cell);
+    if (stringCell.includes(',') || stringCell.includes('"') || stringCell.includes('\n')) {
+      return `"${stringCell.replace(/"/g, '""')}"`;
+    }
+    return stringCell;
+  };
+
+  const exportAirdropsToCSV = () => { 
+    exportToCSV(airdrops.map(ad => ({ ...ad, tags: ad.tags?.join('; ') || '', dateAdded: new Date(ad.dateAdded).toLocaleDateString(), })), ['ID', 'ProjectName', 'Blockchain', 'Status', 'MyStatus', 'Potential', 'DateAdded', 'Description', 'EligibilityCriteria', 'Notes', 'Tags'], 'airdrops_export.csv'); 
+    addToast('Airdrops exported to CSV.', 'success'); 
+  };
+
+  const exportWalletsToCSV = () => { 
+    exportToCSV(wallets, ['ID', 'Name', 'Address', 'Blockchain', 'Group'], 'wallets_export.csv'); 
+    addToast('Wallets exported to CSV.', 'success'); 
+  };
+
+  const exportRecurringTasksToCSV = () => { 
+    exportToCSV(recurringTasks.map(task => { const airdrop = airdrops.find(ad => ad.id === task.associatedAirdropId); return { ...task, nextDueDate: new Date(task.nextDueDate).toLocaleDateString(), tags: task.tags?.join('; ') || '', associatedAirdropName: airdrop?.projectName || '', }; }), ['ID', 'Name', 'Frequency', 'NextDueDate', 'Description', 'Notes', 'Tags', 'AssociatedAirdropName'], 'recurring_tasks_export.csv'); 
+    addToast('Recurring tasks exported.', 'success'); 
+  };
+
+  const exportSoldTokenLogsToCSV = () => { 
+    const rows: any[] = []; 
+    airdrops.forEach(airdrop => { 
+      airdrop.claimedTokens.forEach(log => { 
+        if (log.salePricePerToken !== undefined && log.salePricePerToken !== null && log.saleDate) { 
+          const acqCostPerToken = parseFloat(log.acquisitionCostPerToken?.replace(/[^0-9.-]+/g, '') || '0'); 
+          const totalAcqCost = acqCostPerToken * log.quantity; 
+          const totalSaleValue = parseFloat(log.salePricePerToken.replace(/[^0-9.-]+/g, '')) * log.quantity; 
+          const netPL = totalSaleValue - totalAcqCost; 
+          rows.push({ airdropProjectName: airdrop.projectName, tokenSymbol: log.symbol, quantitySold: log.quantity, acquisitionCostPerToken: acqCostPerToken, totalAcquisitionCost: totalAcqCost, salePricePerToken: log.salePricePerToken, totalSaleValue: totalSaleValue, saleDate: new Date(log.saleDate).toLocaleDateString(), notes: log.notes || '', netPL: netPL }); 
+        } 
+      }); 
+    }); 
+    exportToCSV(rows, [ "AirdropProjectName", "TokenSymbol", "QuantitySold", "AcquisitionCostPerToken", "TotalAcquisitionCost", "SalePricePerToken", "TotalSaleValue", "SaleDate", "Notes", "NetPL" ], 'sold_token_logs.csv'); 
+    addToast('Sold token logs exported.', 'success'); 
+  };
 
   const handleExportJsonData = (dataType: 'all' | 'wallets' | 'airdrops' | 'recurringTasks' | 'strategyNotes' = 'all') => {
     try {
@@ -22,16 +110,16 @@ export const DataManagement: React.FC = () => {
       let fileName = `airdrop_compass_backup_all_${new Date().toISOString().split('T')[0]}.json`;
       
       if (dataType === 'wallets') {
-        dataToExport = { wallets: appData.wallets };
+        dataToExport = { wallets: wallets };
         fileName = `airdrop_compass_wallets_${new Date().toISOString().split('T')[0]}.json`;
       } else if (dataType === 'airdrops') {
-        dataToExport = { airdrops: appData.airdrops };
+        dataToExport = { airdrops: airdrops };
         fileName = `airdrop_compass_airdrops_${new Date().toISOString().split('T')[0]}.json`;
       } else if (dataType === 'recurringTasks') { 
-        dataToExport = { recurringTasks: appData.recurringTasks };
+        dataToExport = { recurringTasks: recurringTasks };
         fileName = `airdrop_compass_recurring_tasks_${new Date().toISOString().split('T')[0]}.json`;
       } else if (dataType === 'strategyNotes') {
-        dataToExport = { strategyNotes: appData.strategyNotes };
+        dataToExport = { strategyNotes: strategyNotes };
         fileName = `airdrop_compass_strategy_notes_${new Date().toISOString().split('T')[0]}.json`;
       } else { 
          dataToExport = appData;
